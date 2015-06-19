@@ -1,0 +1,10 @@
+.gradle/
+.idea/
+jcoro-api/build/
+jcoro-agent/build/
+jcoro-analyzer/build/
+jcoro-app/build/
+jcoro-agent/jcoro-agent.iml
+jcoro-analyzer/jcoro-analyzer.iml
+jcoro-api/jcoro-api.iml
+jcoro-app/jcoro-app.iml

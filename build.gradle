@@ -1,0 +1,107 @@
+//allprojects {
+//
+//    apply plugin: 'idea'
+//
+//    idea {
+//        module {
+//            // if you hate browsing Javadoc
+//            downloadJavadoc = false
+//
+//            // and love reading sources :)
+//            downloadSources = true
+//        }
+//    }
+//
+//    repositories {
+//        mavenLocal()
+//        mavenCentral()
+//    }
+//}
+
+project(':jcoro-analyzer') {
+    apply plugin: 'java'
+
+    sourceCompatibility = 1.8
+    targetCompatibility = 1.8
+    version = '1.0'
+
+    repositories {
+	mavenCentral()
+    }
+
+    dependencies {
+	compile project(":jcoro-api")
+        compile 'org.ow2.asm:asm:5.0.4'
+        testCompile group: 'junit', name: 'junit', version: '4.11'
+    }
+}
+
+project(':jcoro-api') {
+    apply plugin: 'java'
+
+    sourceCompatibility = 1.8
+    targetCompatibility = 1.8
+    version = '1.0'
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        testCompile group: 'junit', name: 'junit', version: '4.11'
+    }
+}
+
+project(':jcoro-agent') {
+    apply plugin: 'java'
+
+    sourceCompatibility = 1.8
+    targetCompatibility = 1.8
+    version = 1.0
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        compile project(":jcoro-api")
+        compile 'org.ow2.asm:asm:5.0.4'
+        compile 'org.ow2.asm:asm-analysis:5.0.4'
+        testCompile group: 'junit', name: 'junit', version: '4.11'
+    }
+
+    jar {
+        manifest {
+            attributes("Manifest-Version": "1.0",
+                    "PreMain-Class": "org.jcoro.Agent")
+        }
+    }
+}
+
+project(':jcoro-app') {
+    apply plugin: 'java'
+
+    sourceCompatibility = 1.8
+    targetCompatibility = 1.8
+    version = 1.0
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        compile project(":jcoro-api")
+        testCompile group: 'junit', name: 'junit', version: '4.11'
+    }
+}
+
+task runWithAgent(type: JavaExec) {
+    main = "org.jcoro.tests.simpletest2.TestCoro"
+    classpath = files("jcoro-api/build/libs/jcoro-api-1.0.jar",
+        "jcoro-app/build/libs/jcoro-app-1.0.jar",
+        "lib/asm-all-5.0.4.jar")
+    jvmArgs = ["-javaagent:jcoro-agent/build/libs/jcoro-agent-1.0.jar",
+        "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005"]
+}
+
+runWithAgent.dependsOn ":jcoro-agent:build", ":jcoro-app:build"
