@@ -60,6 +60,10 @@ public class InstrumentProgram {
                 && methodId.methodName.equals("run")) {
             return true;
         }
+        if (methodId.className.equals("org/jcoro/tests/simpletest2/TestCoro$1")
+                && methodId.methodName.equals("foo")) {
+            return true;
+        }
         return false;
     }
 
@@ -72,6 +76,9 @@ public class InstrumentProgram {
     static boolean isRestorePoint(MethodId methodId) {
         // todo: реализовать настоящее поведение вместо заглушки
         if (methodId.className.equals("org/jcoro/Coro") && methodId.methodName.equals("yield"))
+            return true;
+        if (methodId.className.equals("org/jcoro/tests/simpletest2/TestCoro$1")
+                && methodId.methodName.equals("foo"))
             return true;
         return false;
     }
@@ -142,8 +149,14 @@ public class InstrumentProgram {
 
                 wasModified = true;
 
+                // Если метод - первый, кого зовёт движок сопрограмм, то его нужно интерпретировать как статический
+                // чтобы он не записывал this в стек при сохранении фрейма, т.к. подкладывать this под вызов уже будет некому -
+                // мы вызываем run() напрямую
+                boolean methodImplementsICoroRunnable = "run".equals(name); // todo :
+
                 return new MethodAdapter(Opcodes.ASM5, super.visitMethod(access, name, desc, signature, exceptions),
-                        restorePointsCounts.get(methodId), insnsMap.get(methodId), framesMap.get(methodId));
+                        restorePointsCounts.get(methodId), insnsMap.get(methodId), framesMap.get(methodId),
+                        (access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC, methodImplementsICoroRunnable);
             }
         };
         try {

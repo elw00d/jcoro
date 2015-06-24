@@ -7,6 +7,9 @@ import org.objectweb.asm.tree.analysis.BasicValue;
 import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.Value;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * @author elwood
  */
@@ -14,17 +17,22 @@ public class MethodAdapter extends MethodVisitor {
     private final int nRestorePoints;
     private final AbstractInsnNode[] insns;
     private final Frame[] frames;
+    private final boolean isStatic;
+    private final boolean rootCall;
 
     private int insnIndex = 0; // Currently monitoring index of original instruction
     private Label[] restoreLabels;
     private int restorePointsProcessed = 0;
 
-    public MethodAdapter(int api, MethodVisitor mv, int nRestorePoints, AbstractInsnNode[] insns, Frame[] frames) {
+    public MethodAdapter(int api, MethodVisitor mv, int nRestorePoints, AbstractInsnNode[] insns, Frame[] frames,
+                         boolean isStatic, boolean rootCall) {
         super(api, mv);
         //
         this.nRestorePoints = nRestorePoints;
         this.insns = insns;
         this.frames = frames;
+        this.isStatic = isStatic;
+        this.rootCall = rootCall;
     }
 
     private boolean generatingCode = false;
@@ -49,8 +57,6 @@ public class MethodAdapter extends MethodVisitor {
     private Frame nextFrame() {
         return frames[insnIndex + 1];
     }
-
-
 
     @Override
     public void visitCode() {
@@ -94,7 +100,9 @@ public class MethodAdapter extends MethodVisitor {
         if (local.isReference()) {
             return local.getType().getDescriptor();
         } else if (local == BasicValue.RETURNADDRESS_VALUE) {
-            assert false; // todo : ?
+            // Эта штука возможна только в старый версиях джавы - когда в рамках метода можно было
+            // делать подпрограммы (см инструкции jsr и ret) - после выхода джавы 1.6 это уже не актуально
+            throw new UnsupportedOperationException("Frames with old opcodes (subroutines) are not supported");
         } else if (local == BasicValue.UNINITIALIZED_VALUE) {
             return Opcodes.TOP;
         } else if (local == BasicValue.INT_VALUE) {
@@ -124,7 +132,8 @@ public class MethodAdapter extends MethodVisitor {
         if (additionalStackOperand != null) {
             stacks[stacks.length - 1] = additionalStackOperand;
         }
-        mv.visitFrame(Opcodes.F_FULL, frame.getLocals(), locals, stacks.length, stacks);
+        Object[] fixedLocals = fixLocals(locals);
+        mv.visitFrame(Opcodes.F_FULL, fixedLocals.length, fixedLocals, stacks.length, stacks);
     }
 
     private void visitNextFrame() {
@@ -137,13 +146,13 @@ public class MethodAdapter extends MethodVisitor {
         for (int i = 0; i < frame.getStackSize(); i++) {
             stacks[i] = convertFrameOperandToInsn(frame.getStack(i));
         }
-        mv.visitFrame(Opcodes.F_FULL, frame.getLocals(), locals, stacks.length, stacks);
+        Object[] fixedLocals = fixLocals(locals);
+        mv.visitFrame(Opcodes.F_FULL, fixedLocals.length, fixLocals(locals), stacks.length, stacks);
     }
 
     private void visitCurrentFrameWithoutStack() {
         // Если метод статический - все локальные переменные еще равны TOP
         // Если метод нестатический - первая переменная - this, остальное - TOP
-        boolean isStatic = false; // todo : determine it
         final Frame frame = currentFrame();
         Object[] locals = new Object[frame.getLocals()];
         int i = 0;
@@ -154,7 +163,19 @@ public class MethodAdapter extends MethodVisitor {
         for (int j = i; j < locals.length; j++) {
             locals[j] = Opcodes.TOP;
         }
-        mv.visitFrame(Opcodes.F_FULL, frame.getLocals(), locals, 0, new Object[0]);
+        Object[] fixedLocals = fixLocals(locals);
+        mv.visitFrame(Opcodes.F_FULL, fixedLocals.length, fixLocals(locals), 0, new Object[0]);
+    }
+
+    private Object[] fixLocals(Object[] locals) {
+        List<Object> fixed = new ArrayList<>();
+        for (int i = 0; i < locals.length; i++) {
+            fixed.add(locals[i]);
+            if (locals[i] == Opcodes.DOUBLE) {
+                i++; // skip next
+            }
+        }
+        return fixed.toArray(new Object[fixed.size()]);
     }
 
     @Override
@@ -178,7 +199,7 @@ public class MethodAdapter extends MethodVisitor {
             // pop the stack and locals
             {
                 Frame frame = currentFrame();
-                for (int i = 0; i < frame.getLocals(); i++) {
+                for (int i = frame.getLocals() - 1; i >= 0; i--) {
                     BasicValue local = (BasicValue) frame.getLocal(i);
                     if (local == BasicValue.UNINITIALIZED_VALUE) {
                         // do nothing
@@ -205,7 +226,11 @@ public class MethodAdapter extends MethodVisitor {
                         mv.visitVarInsn(Opcodes.DSTORE, i);
                     }
                 }
-                for (int i = 0; i < frame.getStackSize(); i++) { // todo : порядок
+                // Восстанавливаем дно стека
+                boolean methodIsStatic = false; // todo:
+                int nArgs = "foo".equals(name) ? 3 : 0; // todo :
+                int skipStackVars = nArgs + ((!methodIsStatic) ? 1 : 0);
+                for (int i = frame.getStackSize() - 1; i >= skipStackVars; i--) {
                     BasicValue local = (BasicValue) frame.getStack(i);
                     if (local == BasicValue.UNINITIALIZED_VALUE) {
                         // do nothing
@@ -226,6 +251,35 @@ public class MethodAdapter extends MethodVisitor {
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popDouble", "()D", false);
                     }
                 }
+                // Восстанавливаем instance для вызова, если метод - экземплярный
+                if (!methodIsStatic) {
+                    BasicValue local = (BasicValue) frame.getStack(0);
+                    if (local == BasicValue.UNINITIALIZED_VALUE) {
+                        // do nothing
+                    } else if (local == BasicValue.RETURNADDRESS_VALUE) {
+                        // do nothing
+                    } else if (local.isReference()) {
+                        final String typeDescriptor = local.getType().getDescriptor();
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
+                        mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
+                    } else if (local == BasicValue.INT_VALUE) {
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popInt", "()I", false);
+                    } else if (local == BasicValue.LONG_VALUE) {
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popLong", "()J", false);
+                    } else if (local == BasicValue.FLOAT_VALUE) {
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popFloat", "()F", false);
+                    } else {
+                        assert local == BasicValue.DOUBLE_VALUE;
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popDouble", "()D", false);
+                    }
+                }
+                // Передаём дефолтные значения для аргументов вызова
+                // todo : infer args
+                if ("foo".equals(name)) {
+                    mv.visitLdcInsn(0);
+                    mv.visitLdcInsn(0.0D);
+                    mv.visitInsn(Opcodes.ACONST_NULL);
+                }
             }
 
             // Сюда приходим сразу, если нет необходимости восстанавливать стек
@@ -240,7 +294,13 @@ public class MethodAdapter extends MethodVisitor {
             // Save the stack
             {
                 Frame frame = nextFrame();
-                for (int i = frame.getStackSize() - 1; i >= 0; i--) {
+                // Second, save stack
+                // Кроме возвращаемого значения вызванного метода - ведь он вернул нам null или 0 в случае
+                // после осуществления прерывания
+                final Type returnType = Type.getReturnType(desc);
+                boolean skipFirstStackItem = (returnType.getSort() != Type.VOID);
+                //
+                for (int i = skipFirstStackItem ? 1 : 0; i < frame.getStackSize(); i++) {
                     BasicValue local = (BasicValue) frame.getStack(i);
                     if (local == BasicValue.UNINITIALIZED_VALUE) {
                         // do nothing
@@ -259,7 +319,8 @@ public class MethodAdapter extends MethodVisitor {
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushDouble", "(D)V", false);
                     }
                 }
-                for (int i = frame.getLocals() - 1; i >= 0; i--) {
+                // Thirst, save locals
+                for (int i = 0; i <frame.getLocals(); i++) {
                     BasicValue local = (BasicValue) frame.getLocal(i);
                     if (local == BasicValue.UNINITIALIZED_VALUE) {
                         // do nothing
@@ -286,8 +347,23 @@ public class MethodAdapter extends MethodVisitor {
                 // Save the state
                 mv.visitLdcInsn(restorePointsProcessed);
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushState", "(I)V", false);
+                // Finally, save "this" if method is instance method and if method is not rootCall in coro-usage calls hierarchy
+                // (if it isn't ICoroRunnable.run() method implementation)
+                if (!isStatic && !rootCall) {
+                    assert frame.getLocals() >= 1; // At least one local ("this") should be present
+                    mv.visitVarInsn(Opcodes.ALOAD, 0);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
+                }
                 // And return
-                mv.visitInsn(Opcodes.RETURN);
+                //todo :
+                if (!rootCall) {
+                    // todo : push default value for return type
+                    mv.visitInsn(Opcodes.ACONST_NULL);
+                    //
+                    mv.visitInsn(Opcodes.ARETURN);
+                } else {
+                    mv.visitInsn(Opcodes.RETURN);
+                }
             }
             mv.visitLabel(noSaveContextLabel);
             visitNextFrame();
