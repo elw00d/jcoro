@@ -382,7 +382,11 @@ public class MethodAdapter extends MethodVisitor {
     @Override
     public void visitFrame(int type, int nLocal, Object[] local, int nStack, Object[] stack) {
         assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.FRAME;
-        super.visitFrame(type, nLocal, local, nStack, stack);
+        //
+        this.visitCurrentFrame(null);
+        //super.visitFrame(type, nLocal, local, nStack, stack);
+
+        //
         if (!generatingCode) insnIndex++;
     }
 

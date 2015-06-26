@@ -24,15 +24,15 @@ public class TestCoro {
 
             private String foo(int x, double y, String m) {
                 assert x == 5;
-//                assert y == 10;
-//                assert m.equals("argStr");
+                assert y == 10;
+                assert m.equals("argStr");
                 //
                 Coro c = Coro.get();
-                c.yield(); // ���� ����� ������� ��������� @RestorePoint-�������
+                c.yield(); // ???? ????? ??????? ????????? @RestorePoint-???????
                 //
-//                assert x == 5;
-//                assert y == 10;
-//                assert m.equals("argStr");
+                assert x == 5;
+                assert y == 10;
+                assert m.equals("argStr");
                 return "returnedStr";
             }
         });
