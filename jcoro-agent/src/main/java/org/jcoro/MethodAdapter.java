@@ -9,14 +9,14 @@ import org.objectweb.asm.tree.analysis.Value;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * @author elwood
  */
 public class MethodAdapter extends MethodVisitor {
-    private final int nRestorePoints;
-    private final AbstractInsnNode[] insns;
-    private final Frame[] frames;
+    private final MethodAnalyzeResult analyzeResult;
+
     private final boolean isStatic;
     private final boolean rootCall;
 
@@ -24,18 +24,16 @@ public class MethodAdapter extends MethodVisitor {
     private Label[] restoreLabels;
     private int restorePointsProcessed = 0;
 
-    public MethodAdapter(int api, MethodVisitor mv, int nRestorePoints, AbstractInsnNode[] insns, Frame[] frames,
+    public MethodAdapter(int api, MethodVisitor mv, MethodAnalyzeResult methodAnalyzeResult,
                          boolean isStatic, boolean rootCall) {
         super(api, mv);
         //
-        this.nRestorePoints = nRestorePoints;
-        this.insns = insns;
-        this.frames = frames;
+        this.analyzeResult = methodAnalyzeResult;
         this.isStatic = isStatic;
         this.rootCall = rootCall;
     }
 
-    private boolean generatingCode = false;
+    private boolean generatingCode = false; // todo : remove this
 
     private class GenerateCode implements AutoCloseable {
         public GenerateCode() {
@@ -51,11 +49,11 @@ public class MethodAdapter extends MethodVisitor {
     }
 
     private Frame currentFrame() {
-        return frames[insnIndex];
+        return analyzeResult.getFrames()[insnIndex];
     }
 
     private Frame nextFrame() {
-        return frames[insnIndex + 1];
+        return analyzeResult.getFrames()[insnIndex + 1];
     }
 
     @Override
@@ -73,6 +71,7 @@ public class MethodAdapter extends MethodVisitor {
         mv.visitJumpInsn(Opcodes.IFNULL, noActiveStateLabel);
 
         // switch (state)
+        final int nRestorePoints = analyzeResult.getRestorePointCallsCount();
         restoreLabels = new Label[nRestorePoints];
         for (int i = 0; i < nRestorePoints; i++) restoreLabels[i] = new Label();
         if (nRestorePoints == 1) {
@@ -180,10 +179,11 @@ public class MethodAdapter extends MethodVisitor {
 
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.METHOD_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.METHOD_INSN;
         try {
             MethodId callingMethodId = new MethodId(owner, name, desc);
-            if (!InstrumentProgram.isRestorePoint(callingMethodId)) {
+            // Do nothing if this call is not restore point call
+            if (!analyzeResult.getRestorePoints().contains(callingMethodId)) {
                 super.visitMethodInsn(opcode, owner, name, desc, itf);
                 return;
             }
@@ -381,7 +381,7 @@ public class MethodAdapter extends MethodVisitor {
 
     @Override
     public void visitFrame(int type, int nLocal, Object[] local, int nStack, Object[] stack) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.FRAME;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.FRAME;
         //
         this.visitCurrentFrame(null);
         //super.visitFrame(type, nLocal, local, nStack, stack);
@@ -392,35 +392,35 @@ public class MethodAdapter extends MethodVisitor {
 
     @Override
     public void visitFieldInsn(int opcode, String owner, String name, String desc) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.FIELD_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.FIELD_INSN;
         super.visitFieldInsn(opcode, owner, name, desc);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitInsn(int opcode) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.INSN;
         super.visitInsn(opcode);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitIntInsn(int opcode, int operand) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.INT_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.INT_INSN;
         super.visitIntInsn(opcode, operand);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitVarInsn(int opcode, int var) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.VAR_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.VAR_INSN;
         super.visitVarInsn(opcode, var);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitTypeInsn(int opcode, String type) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.TYPE_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.TYPE_INSN;
         super.visitTypeInsn(opcode, type);
         if (!generatingCode) insnIndex++;
     }
@@ -439,63 +439,63 @@ public class MethodAdapter extends MethodVisitor {
 
     @Override
     public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.INVOKE_DYNAMIC_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.INVOKE_DYNAMIC_INSN;
         super.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitJumpInsn(int opcode, Label label) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.JUMP_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.JUMP_INSN;
         super.visitJumpInsn(opcode, label);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitLabel(Label label) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.LABEL;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.LABEL;
         super.visitLabel(label);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitLdcInsn(Object cst) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.LDC_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.LDC_INSN;
         super.visitLdcInsn(cst);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitIincInsn(int var, int increment) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.IINC_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.IINC_INSN;
         super.visitIincInsn(var, increment);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitTableSwitchInsn(int min, int max, Label dflt, Label... labels) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.TABLESWITCH_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.TABLESWITCH_INSN;
         super.visitTableSwitchInsn(min, max, dflt, labels);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitLookupSwitchInsn(Label dflt, int[] keys, Label[] labels) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.LOOKUPSWITCH_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.LOOKUPSWITCH_INSN;
         super.visitLookupSwitchInsn(dflt, keys, labels);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitMultiANewArrayInsn(String desc, int dims) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.MULTIANEWARRAY_INSN;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.MULTIANEWARRAY_INSN;
         super.visitMultiANewArrayInsn(desc, dims);
         if (!generatingCode) insnIndex++;
     }
 
     @Override
     public void visitLineNumber(int line, Label start) {
-        assert generatingCode || insns[insnIndex].getType() == AbstractInsnNode.LINE;
+        assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.LINE;
         super.visitLineNumber(line, start);
         if (!generatingCode) insnIndex++;
     }

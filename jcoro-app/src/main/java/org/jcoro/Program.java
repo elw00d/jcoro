@@ -12,7 +12,7 @@ public class Program {
         Coro outerCoro = Coro.initSuspended(() -> {
             Coro _outerCoro = Coro.get();
 
-            Coro innerCoro = Coro.initSuspended((@Instrument("sdf") ICoroRunnable) () -> {
+            Coro innerCoro = Coro.initSuspended((@Instrument(@RestorePoint("yield")) ICoroRunnable) () -> {
                 Coro _innerCoro = Coro.get();
                 int i = 5;
                 System.out.println("i = " + i);

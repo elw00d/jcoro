@@ -1,34 +1,46 @@
 package org.jcoro;
 
 import org.objectweb.asm.*;
-import org.objectweb.asm.tree.AbstractInsnNode;
-import org.objectweb.asm.tree.MethodNode;
-import org.objectweb.asm.tree.analysis.*;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
-import static org.objectweb.asm.Opcodes.ACC_PUBLIC;
-import static org.objectweb.asm.Opcodes.ACC_STATIC;
-
 /**
  * @author elwood
  */
 public class InstrumentProgram {
+
+    public static URLClassLoader classLoader;
+
     public static void main(String[] args) throws IOException {
         InstrumentProgram analyzer= new InstrumentProgram();
         ArrayList<String> jarPaths = new ArrayList<>();
         jarPaths.add("jcoro-app/build/libs/jcoro-app-1.0.jar");
-        analyzer.analyzeJars(jarPaths);
+
+        // todo : make this working
+        File file = new File("e:/all/Dropbox/jcoro/jcoro-app/build/libs/jcoro-app-1.0.jar");
+        URL url = file.toURL();
+        classLoader = new URLClassLoader(
+                new URL[]{new URL("file:///e:/all/Dropbox/jcoro/jcoro-app/build/libs/jcoro-app-1.0.jar")},
+                Thread.currentThread().getContextClassLoader());
+        try {
+            classLoader.loadClass("org.jcoro.tests.simpletest2.TestCoro");
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+
+        analyzer.instrumentJars(jarPaths);
     }
 
-    public void analyzeJars(List<String> jarPaths) throws IOException {
+    public void instrumentJars(List<String> jarPaths) throws IOException {
         // Первый проход алгоритма
         for (String jarPath : jarPaths) {
             JarFile jarFile = new JarFile(new File(jarPath));
@@ -51,38 +63,6 @@ public class InstrumentProgram {
         }
     }
 
-    /**
-     * Нужно ли инструментировать код метода methodId
-     */
-    private static boolean needInstrument(MethodId methodId) {
-        // todo: реализовать настоящее поведение вместо заглушки
-        if (methodId.className.equals("org/jcoro/tests/simpletest2/TestCoro$1")
-                && methodId.methodName.equals("run")) {
-            return true;
-        }
-        if (methodId.className.equals("org/jcoro/tests/simpletest2/TestCoro$1")
-                && methodId.methodName.equals("foo")) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Нужно ли рассматривать вызов метода methodId как вызов, внутри которого может произойти вызов yield(),
-     * или такого не может произойти ? Если есть вероятность, что при вызове methodId произойдёт вызов yield(),
-     * то мы должны рассматривать этот вызов как точку восстановления, и обрамлять вызов метода соответствующим
-     * байткодом.
-     */
-    static boolean isRestorePoint(MethodId methodId) {
-        // todo: реализовать настоящее поведение вместо заглушки
-        if (methodId.className.equals("org/jcoro/Coro") && methodId.methodName.equals("yield"))
-            return true;
-        if (methodId.className.equals("org/jcoro/tests/simpletest2/TestCoro$1")
-                && methodId.methodName.equals("foo"))
-            return true;
-        return false;
-    }
-
     private String className;
     private boolean wasModified; // Были ли на самом деле изменения в классе
 
@@ -90,9 +70,7 @@ public class InstrumentProgram {
         className = null;
         wasModified = false;
 
-        Map<MethodId, Integer> restorePointsCounts = new HashMap<>();
-        Map<MethodId, Frame[]> framesMap = new HashMap<>();
-        Map<MethodId, AbstractInsnNode[]> insnsMap = new HashMap<>();
+        Map<MethodId, MethodAnalyzeResult> analyzeResults = new HashMap<>();
 
         // Сначала посчитаем для каждого метода кол-во точек восстановления внутри него
         // Это необходимо для генерации кода switch в начале метода
@@ -108,15 +86,9 @@ public class InstrumentProgram {
             @Override
             public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
                 MethodVisitor methodVisitor = super.visitMethod(access, name, desc, signature, exceptions);
-
-                // todo : научиться распознавать классы, отнаследованные от ICoroRunnable
-                if (!className.equals("org/jcoro/tests/simpletest2/TestCoro$1")) {
-                    return methodVisitor;
-                }
-
                 return new MethodAnalyzer(Opcodes.ASM5, methodVisitor, access,
                         className, name, desc, signature, exceptions,
-                        restorePointsCounts, framesMap, insnsMap, bytes);
+                        analyzeResults, bytes);
             }
         }, 0);
 
@@ -135,27 +107,29 @@ public class InstrumentProgram {
         ClassVisitor adapter = new ClassVisitor(Opcodes.ASM5, writer) {
             @Override
             public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
-                // todo : научиться распознавать классы, отнаследованные от ICoroRunnable
-                if (!className.equals("org/jcoro/tests/simpletest2/TestCoro$1"))
-                    return super.visitMethod(access, name, desc, signature, exceptions);
-
                 MethodId methodId = new MethodId(className, name, desc);
 
                 // Если метод не нужно инструментировать, ничего и не делаем
-                if (!needInstrument(methodId)) return super.visitMethod(access, name, desc, signature, exceptions);
+                boolean needInstrument = analyzeResults.containsKey(methodId);
+                if (!needInstrument)
+                    return super.visitMethod(access, name, desc, signature, exceptions);
+
+                MethodAnalyzeResult analyzeResult = analyzeResults.get(methodId);
 
                 // Если внутри метода нет ни одной точки восстановления - также можем не инструментировать его
-                if (!restorePointsCounts.containsKey(methodId)) return super.visitMethod(access, name, desc, signature, exceptions);
+                if (analyzeResult.getRestorePointCallsCount() == 0)
+                    return super.visitMethod(access, name, desc, signature, exceptions);
 
                 wasModified = true;
 
-                // Если метод - первый, кого зовёт движок сопрограмм, то его нужно интерпретировать как статический
-                // чтобы он не записывал this в стек при сохранении фрейма, т.к. подкладывать this под вызов уже будет некому -
+                // Если метод - первый, кого зовёт движок сопрограмм, то его нужно инструментировать
+                // особым образом - так, чтобы он не записывал this в стек при сохранении фрейма,
+                // (как если бы это был статический метод), т.к. подкладывать this под вызов уже будет некому -
                 // мы вызываем run() напрямую
-                boolean methodImplementsICoroRunnable = "run".equals(name); // todo :
+                boolean methodImplementsICoroRunnable = "run".equals(name); // todo : more precise detection
 
                 return new MethodAdapter(Opcodes.ASM5, super.visitMethod(access, name, desc, signature, exceptions),
-                        restorePointsCounts.get(methodId), insnsMap.get(methodId), framesMap.get(methodId),
+                        analyzeResult,
                         (access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC, methodImplementsICoroRunnable);
             }
         };
@@ -171,6 +145,7 @@ public class InstrumentProgram {
             try {
                 Files.write(
                         //Paths.get(className.replaceAll("/", ".") + ".class"),
+                        // todo :
                         Paths.get("TestCoro$1.class"),
                         transformed);
             } catch (IOException e) {
