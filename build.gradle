@@ -58,6 +58,7 @@ project(':jcoro-agent') {
     sourceCompatibility = 1.8
     targetCompatibility = 1.8
     version = 1.0
+    compileJava.options.encoding = 'UTF-8'
 
     repositories {
         mavenCentral()
@@ -91,8 +92,46 @@ project(':jcoro-app') {
 
     dependencies {
         compile project(":jcoro-api")
-        testCompile group: 'junit', name: 'junit', version: '4.11'
+        compile project(":jcoro-agent")
+        compile group: 'junit', name: 'junit', version: '4.11'
     }
+
+    task gogogo(type: JavaExec) {
+        main = "org.jcoro.Program"
+        classpath = files("../jcoro-api/build/libs/jcoro-api-1.0.jar",
+                "../jcoro-agent/build/libs/jcoro-agent-1.0.jar",
+                "../lib/asm-all-5.0.4.jar")
+        jvmArgs = ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]
+        args = ["--source", test.testClassesDir, "--dest", "./build/classes/testInstrumented"]
+
+        // todo : instrument all classes in ./build/classes/test
+        logger.lifecycle("Test classes:::: " + test.testClassesDir)
+    }
+
+    sourceSets {
+        test {
+            // Вместо дефолтной директории "test" используем "testInstrumented" для запуска тестов
+            runtimeClasspath = files("./build/classes/testInstrumented")
+                + sourceSets.main.output + configurations.testRuntime
+        }
+    }
+
+    test {
+        testClassesDir = new File("./build/classes/testInstrumented")
+
+        beforeSuite {
+            logger.lifecycle("Test classes dir:" + test.testClassesDir)
+            for (def classpathItem : test.classpath)
+                logger.lifecycle("Classpath item: " + classpathItem)
+        }
+
+        beforeTest { descriptor ->
+            logger.lifecycle("Running test: " + descriptor)
+        }
+    }
+
+    test.dependsOn gogogo
+    gogogo.dependsOn testClasses
 }
 
 task runWithAgent(type: JavaExec) {

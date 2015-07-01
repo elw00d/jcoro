@@ -1,4 +1,9 @@
-package org.jcoro;
+package org.jcoro.tests;
+
+import org.jcoro.Coro;
+import org.jcoro.ICoroRunnable;
+import org.jcoro.Instrument;
+import org.jcoro.RestorePoint;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousFileChannel;

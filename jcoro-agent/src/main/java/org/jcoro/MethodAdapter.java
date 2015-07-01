@@ -1,6 +1,5 @@
 package org.jcoro;
 
-import com.sun.org.apache.bcel.internal.generic.INVOKESTATIC;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.analysis.BasicValue;
@@ -9,7 +8,6 @@ import org.objectweb.asm.tree.analysis.Value;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 /**
  * @author elwood
@@ -19,18 +17,20 @@ public class MethodAdapter extends MethodVisitor {
 
     private final boolean isStatic;
     private final boolean rootCall;
+    private final Type returnType;
 
     private int insnIndex = 0; // Currently monitoring index of original instruction
     private Label[] restoreLabels;
     private int restorePointsProcessed = 0;
 
     public MethodAdapter(int api, MethodVisitor mv, MethodAnalyzeResult methodAnalyzeResult,
-                         boolean isStatic, boolean rootCall) {
+                         boolean isStatic, boolean rootCall, Type returnType) {
         super(api, mv);
         //
         this.analyzeResult = methodAnalyzeResult;
         this.isStatic = isStatic;
         this.rootCall = rootCall;
+        this.returnType = returnType;
     }
 
     private boolean generatingCode = false; // todo : remove this
@@ -113,9 +113,8 @@ public class MethodAdapter extends MethodVisitor {
         } else if (local == BasicValue.DOUBLE_VALUE) {
             return Opcodes.DOUBLE;
         } else {
-            assert false; // todo : ?
+            throw new AssertionError("This shouldn't happen");
         }
-        throw new AssertionError();
     }
 
     private void visitCurrentFrame(String additionalStackOperand) {
@@ -177,6 +176,39 @@ public class MethodAdapter extends MethodVisitor {
         return fixed.toArray(new Object[fixed.size()]);
     }
 
+    /**
+     * Generates ldc 0 (null) instruction for specified type.
+     */
+    private void visitLdcDefaultValueForType(Type type) {
+        final int sort = type.getSort();
+        switch (sort) {
+            case Type.VOID:
+                break;
+            case Type.OBJECT:
+            case Type.ARRAY:
+                mv.visitInsn(Opcodes.ACONST_NULL);
+                break;
+            case Type.INT:
+            case Type.SHORT:
+            case Type.BYTE:
+            case Type.BOOLEAN:
+            case Type.CHAR:
+                mv.visitLdcInsn(0);
+                break;
+            case Type.LONG:
+                mv.visitLdcInsn(0L);
+                break;
+            case Type.DOUBLE:
+                mv.visitLdcInsn(0.d);
+                break;
+            case Type.FLOAT:
+                mv.visitLdcInsn(0.f);
+                break;
+            default:
+                throw new AssertionError("This shouldn't happen");
+        }
+    }
+
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
         assert generatingCode || analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.METHOD_INSN;
@@ -227,9 +259,12 @@ public class MethodAdapter extends MethodVisitor {
                     }
                 }
                 // Восстанавливаем дно стека
-                boolean methodIsStatic = false; // todo:
-                int nArgs = "foo".equals(name) ? 3 : 0; // todo :
-                int skipStackVars = nArgs + ((!methodIsStatic) ? 1 : 0);
+                boolean callingMethodIsStatic = (opcode == Opcodes.INVOKESTATIC);
+                final Type callingMethodType = Type.getType(desc);
+                final Type[] argumentTypes = callingMethodType.getArgumentTypes();
+                int nArgs = argumentTypes.length; //"foo".equals(name) ? 3 : 0; // todo :
+                int skipStackVars = nArgs + ((!callingMethodIsStatic) ? 1 : 0);
+                //
                 for (int i = frame.getStackSize() - 1; i >= skipStackVars; i--) {
                     BasicValue local = (BasicValue) frame.getStack(i);
                     if (local == BasicValue.UNINITIALIZED_VALUE) {
@@ -252,7 +287,7 @@ public class MethodAdapter extends MethodVisitor {
                     }
                 }
                 // Восстанавливаем instance для вызова, если метод - экземплярный
-                if (!methodIsStatic) {
+                if (!callingMethodIsStatic) {
                     BasicValue local = (BasicValue) frame.getStack(0);
                     if (local == BasicValue.UNINITIALIZED_VALUE) {
                         // do nothing
@@ -275,11 +310,14 @@ public class MethodAdapter extends MethodVisitor {
                 }
                 // Передаём дефолтные значения для аргументов вызова
                 // todo : infer args
-                if ("foo".equals(name)) {
-                    mv.visitLdcInsn(0);
-                    mv.visitLdcInsn(0.0D);
-                    mv.visitInsn(Opcodes.ACONST_NULL);
+                for (int i = 0; i < argumentTypes.length; i++) {
+                    visitLdcDefaultValueForType(argumentTypes[i]);
                 }
+//                if ("foo".equals(name)) {
+//                    mv.visitLdcInsn(0);
+//                    mv.visitLdcInsn(0.0D);
+//                    mv.visitInsn(Opcodes.ACONST_NULL);
+//                }
             }
 
             // Сюда приходим сразу, если нет необходимости восстанавливать стек
@@ -297,8 +335,8 @@ public class MethodAdapter extends MethodVisitor {
                 // Second, save stack
                 // Кроме возвращаемого значения вызванного метода - ведь он вернул нам null или 0 в случае
                 // после осуществления прерывания
-                final Type returnType = Type.getReturnType(desc);
-                boolean skipFirstStackItem = (returnType.getSort() != Type.VOID);
+                final Type callingMethodReturnType = Type.getReturnType(desc);
+                boolean skipFirstStackItem = (callingMethodReturnType.getSort() != Type.VOID);
                 //
                 for (int i = skipFirstStackItem ? 1 : 0; i < frame.getStackSize(); i++) {
                     BasicValue local = (BasicValue) frame.getStack(i);
@@ -355,12 +393,39 @@ public class MethodAdapter extends MethodVisitor {
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
                 }
                 // And return
-                //todo :
                 if (!rootCall) {
-                    // todo : push default value for return type
-                    mv.visitInsn(Opcodes.ACONST_NULL);
+                    // Push default value for return type
+                    visitLdcDefaultValueForType(returnType);
                     //
-                    mv.visitInsn(Opcodes.ARETURN);
+                    final int type = returnType.getSort();
+                    switch (type) {
+                        case Type.VOID:
+                            mv.visitInsn(Opcodes.RETURN);
+                            break;
+                        case Type.OBJECT:
+                        case Type.ARRAY:
+                            mv.visitInsn(Opcodes.ARETURN);
+                            break;
+                        // https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.9.2
+                        case Type.INT:
+                        case Type.SHORT:
+                        case Type.BYTE:
+                        case Type.BOOLEAN:
+                        case Type.CHAR:
+                            mv.visitInsn(Opcodes.IRETURN);
+                            break;
+                        case Type.LONG:
+                            mv.visitInsn(Opcodes.LRETURN);
+                            break;
+                        case Type.DOUBLE:
+                            mv.visitInsn(Opcodes.DRETURN);
+                            break;
+                        case Type.FLOAT:
+                            mv.visitInsn(Opcodes.FRETURN);
+                            break;
+                        default:
+                            throw new AssertionError("This shouldn't happen");
+                    }
                 } else {
                     mv.visitInsn(Opcodes.RETURN);
                 }

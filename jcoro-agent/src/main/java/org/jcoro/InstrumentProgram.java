@@ -57,7 +57,7 @@ public class InstrumentProgram {
                             totalReaded += readed;
                         }
                     }
-                    transform(bytes);
+                    transform(bytes); // todo : write to file after this call if wasModified
                 }
             }
         }
@@ -66,7 +66,7 @@ public class InstrumentProgram {
     private String className;
     private boolean wasModified; // Были ли на самом деле изменения в классе
 
-    private void transform(byte[] bytes) {
+    public TransformResult transform(byte[] bytes) {
         className = null;
         wasModified = false;
 
@@ -130,7 +130,9 @@ public class InstrumentProgram {
 
                 return new MethodAdapter(Opcodes.ASM5, super.visitMethod(access, name, desc, signature, exceptions),
                         analyzeResult,
-                        (access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC, methodImplementsICoroRunnable);
+                        (access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC,
+                        methodImplementsICoroRunnable,
+                        Type.getType(desc).getReturnType());
             }
         };
         try {
@@ -139,18 +141,24 @@ public class InstrumentProgram {
             e.printStackTrace();
             System.exit(-1);
         }
-        byte[] transformed = writer.toByteArray();
 
         if (wasModified) {
-            try {
-                Files.write(
-                        //Paths.get(className.replaceAll("/", ".") + ".class"),
-                        // todo :
-                        Paths.get("TestCoro$1.class"),
-                        transformed);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            byte[] transformed = writer.toByteArray();
+            return new TransformResult(true, className, transformed);
+        } else {
+            return new TransformResult(false, className, bytes);
         }
+
+//        if (wasModified) {
+//            try {
+//                Files.write(
+//                        //Paths.get(className.replaceAll("/", ".") + ".class"),
+//                        // todo :
+//                        Paths.get("TestCoro$1.class"),
+//                        transformed);
+//            } catch (IOException e) {
+//                throw new RuntimeException(e);
+//            }
+//        }
     }
 }

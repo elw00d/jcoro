@@ -30,6 +30,10 @@ public class Coro implements AutoCloseable {
 
     private boolean alreadyYielded = false;
 
+    public boolean isAlreadyYielded() {
+        return alreadyYielded;
+    }
+
     public void yield() {
         if (!alreadyYielded) {
             isYielding = true;
