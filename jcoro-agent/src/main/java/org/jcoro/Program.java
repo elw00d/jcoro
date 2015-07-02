@@ -67,7 +67,7 @@ public class Program {
             }
             InstrumentProgram instrumentProgram = new InstrumentProgram();
             final TransformResult transformResult = instrumentProgram.transform(bytes);
-            if (transformResult.wasModified()) {
+            //if (transformResult.wasModified()) {
                 final String[] parts = transformResult.getClassName().split("/");
                 final String onlyName = parts[parts.length - 1];
 
@@ -99,7 +99,7 @@ public class Program {
                 } catch (IOException e) {
                     throw new RuntimeException("Cannot write to file: " + transformedClassFile.getPath(), e);
                 }
-            }
+            //}
         }
 
     }

@@ -111,8 +111,8 @@ project(':jcoro-app') {
     sourceSets {
         test {
             // Вместо дефолтной директории "test" используем "testInstrumented" для запуска тестов
-            runtimeClasspath = files("./build/classes/testInstrumented")
-                + sourceSets.main.output + configurations.testRuntime
+            runtimeClasspath = (files("./build/classes/testInstrumented")
+                + sourceSets.main.output + configurations.testRuntime)
         }
     }
 

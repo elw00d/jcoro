@@ -28,6 +28,8 @@ public class Coro implements AutoCloseable {
         return new Coro(runnable);
     }
 
+    private Runnable deferFunc;
+
     private boolean alreadyYielded = false;
 
     public boolean isAlreadyYielded() {
@@ -42,6 +44,11 @@ public class Coro implements AutoCloseable {
         }
     }
 
+    public void yield(Runnable deferFunc) {
+        this.deferFunc = deferFunc;
+        yield();
+    }
+
     public void start() {
         resume();
     }
@@ -52,11 +59,19 @@ public class Coro implements AutoCloseable {
         }
         activeCoro.set(this);
         try {
-            // todo : restore stack, call top func
+            // Call coro func
             runnable.run();
         } finally {
             isYielding = false;
             activeCoro.remove();
+        }
+        // Call defer func
+        try {
+            if (deferFunc != null) {
+                deferFunc.run();
+            }
+        } finally {
+            deferFunc = null;
         }
     }
 
