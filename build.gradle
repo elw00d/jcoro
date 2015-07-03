@@ -96,7 +96,16 @@ project(':jcoro-app') {
         compile group: 'junit', name: 'junit', version: '4.11'
     }
 
-    task gogogo(type: JavaExec) {
+    task instrumentClasses(type: JavaExec) {
+        main = "org.jcoro.Program"
+        classpath = files("../jcoro-api/build/libs/jcoro-api-1.0.jar",
+                "../jcoro-agent/build/libs/jcoro-agent-1.0.jar",
+                "../lib/asm-all-5.0.4.jar")
+        jvmArgs = ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]
+        args = ["--source", compileJava.destinationDir, "--dest", "./build/classes/instrumented"]
+    }
+
+    task instrumentTestClasses(type: JavaExec) {
         main = "org.jcoro.Program"
         classpath = files("../jcoro-api/build/libs/jcoro-api-1.0.jar",
                 "../jcoro-agent/build/libs/jcoro-agent-1.0.jar",
@@ -130,8 +139,11 @@ project(':jcoro-app') {
         }
     }
 
-    test.dependsOn gogogo
-    gogogo.dependsOn testClasses
+    instrumentClasses.dependsOn classes
+    jar.dependsOn instrumentClasses
+
+    test.dependsOn instrumentTestClasses
+    instrumentTestClasses.dependsOn testClasses
 }
 
 task runWithAgent(type: JavaExec) {

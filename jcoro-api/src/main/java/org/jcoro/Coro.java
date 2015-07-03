@@ -30,18 +30,24 @@ public class Coro implements AutoCloseable {
 
     private Runnable deferFunc;
 
-    private boolean alreadyYielded = false;
-
-    public boolean isAlreadyYielded() {
-        return alreadyYielded;
-    }
+    private boolean suspendedAfterYield = false;
 
     public void yield() {
-        if (!alreadyYielded) {
+        if (isYielding)
+            throw new IllegalStateException("Yielding is already started");
+        // suspendedAfterYield равен true, если мы восстанавливаем стек и в процессе восстановления стека
+        // добрались до самого глубокого вызова yield() - на котором собственно и запаузились
+        // И если мы находимся внутри yield() и suspendedAfterYield = true, то нам ничего делать не нужно
+        // Только сбросить обратно этот флаг с тем, чтобы сопрограмму снова можно было запаузить
+        if (suspendedAfterYield) {
+            suspendedAfterYield = false;
+            return;
+        }
+//        if (!suspendedAfterYield) {
             isYielding = true;
             get().refsStack.push(this); // Аргументы и this если есть
-            alreadyYielded = true;
-        }
+//            suspendedAfterYield = true;
+//        }
     }
 
     public void yield(Runnable deferFunc) {
@@ -62,7 +68,10 @@ public class Coro implements AutoCloseable {
             // Call coro func
             runnable.run();
         } finally {
-            isYielding = false;
+            if (isYielding) {
+                isYielding = false;
+                suspendedAfterYield = true;
+            }
             activeCoro.remove();
         }
         // Call defer func

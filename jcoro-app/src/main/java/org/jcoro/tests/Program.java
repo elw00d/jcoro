@@ -47,7 +47,7 @@ public class Program {
         Coro coro = Coro.get();
         final Integer[] res = new Integer[1];
         final Throwable[] exc = new Throwable[1];
-        channel.read(buffer, pos, null, new CompletionHandler<Integer, Object>() {
+        coro.yield(() -> channel.read(buffer, pos, null, new CompletionHandler<Integer, Object>() {
             @Override
             public void completed(Integer result, Object attachment) {
                 res[0] = result;
@@ -59,15 +59,8 @@ public class Program {
                 exc[0] = e;
                 coro.resume();
             }
-        });
-        coro.yield(); // bug: possible race here
+        }));
         if (res[0] != null) return res[0];
         throw exc[0];
     }
-
-//    private static void testMethod() {
-//        System.out.println("Begin of method");
-//        coro.yield();
-//        System.out.println("End of method");
-//    }
 }
