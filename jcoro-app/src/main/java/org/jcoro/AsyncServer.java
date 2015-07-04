@@ -7,21 +7,35 @@ import java.nio.channels.AsynchronousServerSocketChannel;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
 import java.nio.charset.Charset;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author elwood
  */
 public class AsyncServer {
+    static AtomicInteger openChannels = new AtomicInteger();
+
     public static void main(String[] args) throws IOException, InterruptedException {
         final AsynchronousServerSocketChannel listener =
                 AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(5000));
+
+        ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
         listener.accept(null, new CompletionHandler<AsynchronousSocketChannel, Void>() {
             @Override
             public void completed(AsynchronousSocketChannel channel, Void attachment) {
                 listener.accept(null, this);
+                openChannels.incrementAndGet();
 
-                handle(channel);
+                executorService.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        handle(channel);
+                    }
+                });
+                //handle(channel);
             }
 
             @Override
@@ -43,9 +57,11 @@ public class AsyncServer {
                 channel.write(outBuffer, null, new CompletionHandler<Integer, Void>() {
                     @Override
                     public void completed(Integer result, Void attachment) {
-                        System.out.println("Response sent");
+                        //System.out.println("Response sent");
                         try {
                             channel.close();
+                            int nOpen = openChannels.decrementAndGet();
+                            System.out.println("Open channels: " + nOpen);
                         } catch (IOException e) {
                             e.printStackTrace();
                         }

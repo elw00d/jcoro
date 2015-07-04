@@ -22,15 +22,15 @@ public class Coro implements AutoCloseable {
         return activeCoro.get();
     }
 
-    private boolean isYielding = false;
+    private volatile boolean isYielding = false;
 
     public static Coro initSuspended(ICoroRunnable runnable) {
         return new Coro(runnable);
     }
 
-    private Runnable deferFunc;
+    private volatile Runnable deferFunc;
 
-    private boolean suspendedAfterYield = false;
+    private volatile boolean suspendedAfterYield = false;
 
     public void yield() {
         if (isYielding)
@@ -51,15 +51,27 @@ public class Coro implements AutoCloseable {
     }
 
     public void yield(Runnable deferFunc) {
-        this.deferFunc = deferFunc;
+        // Иначе при восстановлении стека можно неожиданно обнулить deferFunc,
+        // а выше по стеку тоже был вызов resume() - например если одна асинхронная операция
+        // выполняется в том же потоке, в котором была запланирована
+        if (!suspendedAfterYield) {
+            this.deferFunc = deferFunc;
+        }
         yield();
     }
+
+    private static ThreadLocal<Integer> resumeCallsInStack = new ThreadLocal<>();
 
     public void start() {
         resume();
     }
 
     public void resume() {
+        Integer integer = resumeCallsInStack.get();
+        resumeCallsInStack.set((integer == null ? 0 : integer) +1);
+        if (integer != null && integer > 0) {
+            System.out.println("Error!!1");
+        }
         if (null != activeCoro.get()) {
             throw new AssertionError("This shouldn't happen");
         }
@@ -77,20 +89,23 @@ public class Coro implements AutoCloseable {
         // Call defer func
         try {
             if (deferFunc != null) {
-                deferFunc.run();
+                Runnable deferFuncCopy = deferFunc;
+                deferFunc = null;
+                deferFuncCopy.run();
             }
         } finally {
-            deferFunc = null;
+
         }
+        resumeCallsInStack.set(resumeCallsInStack.get()-1);
     }
 
-    private Stack<Integer> statesStack = new Stack<>();
+    private volatile Stack<Integer> statesStack = new Stack<>();
 
-    private Stack<Object> refsStack = new Stack<>();
-    private Stack<Integer> intsStack = new Stack<>();
-    private Stack<Double> doublesStack = new Stack<>();
-    private Stack<Float> floatsStack = new Stack<>();
-    private Stack<Long> longsStack = new Stack<>();
+    private volatile Stack<Object> refsStack = new Stack<>();
+    private volatile Stack<Integer> intsStack = new Stack<>();
+    private volatile Stack<Double> doublesStack = new Stack<>();
+    private volatile Stack<Float> floatsStack = new Stack<>();
+    private volatile Stack<Long> longsStack = new Stack<>();
 
     public static void pushState(int state) {
         get().statesStack.push(state);
