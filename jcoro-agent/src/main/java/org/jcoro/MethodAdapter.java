@@ -65,7 +65,8 @@ public class MethodAdapter extends MethodVisitor {
             mv.visitJumpInsn(Opcodes.GOTO, restoreLabels[0]);
         } else {
             assert nRestorePoints > 1;
-            mv.visitTableSwitchInsn(0, nRestorePoints, noActiveCoroLabel, restoreLabels);
+            mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "Ljava/lang/Integer;", "intValue", "()I", false);
+            mv.visitTableSwitchInsn(0, nRestorePoints - 1, noActiveCoroLabel, restoreLabels);
         }
 
         // noActiveStateLabel:

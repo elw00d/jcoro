@@ -2,6 +2,9 @@ package org.jcoro;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.OpenOption;
 import java.nio.file.StandardOpenOption;
@@ -57,7 +60,17 @@ public class Program {
         File sourceDir = new File(sourceDirPath);
         List<File> allClassFiles = new ArrayList<>();
         collectClassFilesRecursively(allClassFiles, sourceDir);
-        //
+
+        // Initialize classloader
+        try {
+            InstrumentProgram.classLoader = new URLClassLoader(
+                    new URL[]{sourceDir.toURI().toURL()},
+                    Thread.currentThread().getContextClassLoader()
+            );
+        } catch (MalformedURLException e) {
+            throw new RuntimeException(e);
+        }
+
         for (File classFile : allClassFiles) {
             final byte[] bytes;
             try {
