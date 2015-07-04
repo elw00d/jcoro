@@ -51,12 +51,7 @@ public class Coro implements AutoCloseable {
     }
 
     public void yield(Runnable deferFunc) {
-        // Иначе при восстановлении стека можно неожиданно обнулить deferFunc,
-        // а выше по стеку тоже был вызов resume() - например если одна асинхронная операция
-        // выполняется в том же потоке, в котором была запланирована
-        if (!suspendedAfterYield) {
-            this.deferFunc = deferFunc;
-        }
+        this.deferFunc = deferFunc;
         yield();
     }
 
@@ -69,7 +64,7 @@ public class Coro implements AutoCloseable {
     public void resume() {
         Integer integer = resumeCallsInStack.get();
         resumeCallsInStack.set((integer == null ? 0 : integer) +1);
-        if (integer != null && integer > 0) {
+        if (integer != null && integer > 1) {
             System.out.println("Error!!1");
         }
         if (null != activeCoro.get()) {
@@ -89,12 +84,10 @@ public class Coro implements AutoCloseable {
         // Call defer func
         try {
             if (deferFunc != null) {
-                Runnable deferFuncCopy = deferFunc;
-                deferFunc = null;
-                deferFuncCopy.run();
+                deferFunc.run();
             }
         } finally {
-
+            deferFunc = null;
         }
         resumeCallsInStack.set(resumeCallsInStack.get()-1);
     }
