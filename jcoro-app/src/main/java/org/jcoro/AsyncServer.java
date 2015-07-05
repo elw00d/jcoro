@@ -27,7 +27,7 @@ public class AsyncServer {
             @Override
             public void completed(AsynchronousSocketChannel channel, Void attachment) {
                 listener.accept(null, this);
-                openChannels.incrementAndGet();
+//                openChannels.incrementAndGet();
 
                 executorService.submit(new Runnable() {
                     @Override
@@ -60,8 +60,8 @@ public class AsyncServer {
                         //System.out.println("Response sent");
                         try {
                             channel.close();
-                            int nOpen = openChannels.decrementAndGet();
-                            System.out.println("Open channels: " + nOpen);
+//                            int nOpen = openChannels.decrementAndGet();
+//                            System.out.println("Open channels: " + nOpen);
                         } catch (IOException e) {
                             e.printStackTrace();
                         }

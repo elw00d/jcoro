@@ -6,7 +6,7 @@ import java.util.Stack;
  * @author elwood
  */
 public class Coro implements AutoCloseable {
-    private static ThreadLocal<Coro> activeCoro = new ThreadLocal<>();
+    private static ThreadLocal<Stack<Coro>> activeCoroStack = new ThreadLocal<>();
 
     private final ICoroRunnable runnable;
 
@@ -14,12 +14,48 @@ public class Coro implements AutoCloseable {
         this.runnable = runnable;
     }
 
+    public static boolean exists() {
+        return getSafe() != null;
+    }
+
     /**
-     * Returns active coro instance or null if there are no coro created yet.
-     * Called basically from injected bytecode.
+     * Returns top active coro instance or throws IllegalStateException
+     * if there are no coro created yet. Should be called by user code if
+     * need to retrieve current coro;
      */
     public static Coro get() {
-        return activeCoro.get();
+        final Stack<Coro> coroStack = activeCoroStack.get();
+        if (null == coroStack || coroStack.empty())
+            throw new IllegalStateException("No active coro exists");
+        return coroStack.peek();
+    }
+
+    /**
+     * Returns top active coro instance or null if there are no coro created yet.
+     * Called from generated code when instrumented method starts.
+     */
+    public static Coro getSafe() {
+        final Stack<Coro> coroStack = activeCoroStack.get();
+        if (null == coroStack || coroStack.empty())
+            return null;
+        return coroStack.peek();
+    }
+
+    /**
+     * Returns top active coro instance without checking of its existence.
+     * Can be used only if caller is sure about coro exists.
+     */
+    private static Coro getUnsafe() {
+        return activeCoroStack.get().peek();
+    }
+
+    private static void pushCoro(Coro coro) {
+        Stack<Coro> coroStack = activeCoroStack.get();
+        if (coroStack == null) {
+            coroStack = new Stack<>();
+            activeCoroStack.set(coroStack);
+        }
+        coroStack.push(coro);
     }
 
     private boolean isYielding = false;
@@ -32,6 +68,10 @@ public class Coro implements AutoCloseable {
 
     private boolean suspendedAfterYield = false;
 
+    /**
+     * Приостанавливает выполнение сопрограммы, сохраняя состояние и возвращая дефолтные значения
+     * вверх по всему стеку вызовов до корневого ICoroRunnable.run() - метода.
+     */
     public void yield() {
         if (isYielding)
             throw new IllegalStateException("Yielding is already started");
@@ -51,6 +91,12 @@ public class Coro implements AutoCloseable {
         this.deferFunc = deferFunc;
     }
 
+    /**
+     * Приостанавливает выполнение сопрограммы, сохраняя состояние и возвращая дефолтные значения
+     * вверх по всему стеку вызовов до корневого ICoroRunnable.run() - метода. Дополнительно задаёт
+     * deferFunc, который будет выполнен после сохранения состояния всех методов. В качестве deferFunc
+     * удобно передавать лямбду, которая шедулит очередную асинхронную операцию с коллбеком.
+     */
     public void yield(Runnable deferFunc) {
         // Так как мы не инструментируем этот метод (он - библиотечный), а вызов этого метода
         // является точкой восстановления (как и yield() без параметров), то
@@ -70,10 +116,7 @@ public class Coro implements AutoCloseable {
     }
 
     public void resume() {
-        if (null != activeCoro.get()) {
-            throw new AssertionError("This shouldn't happen");
-        }
-        activeCoro.set(this);
+        pushCoro(this);
         try {
             // Call coro func
             runnable.run();
@@ -82,7 +125,7 @@ public class Coro implements AutoCloseable {
                 isYielding = false;
                 suspendedAfterYield = true;
             }
-            activeCoro.remove();
+            activeCoroStack.get().pop();
         }
         // Call defer func
         if (deferFunc != null) {
@@ -109,57 +152,58 @@ public class Coro implements AutoCloseable {
     private Stack<Long> longsStack = new Stack<>();
 
     public static void pushState(int state) {
-        get().statesStack.push(state);
+        getUnsafe().statesStack.push(state);
     }
 
     public static void pushRef(Object ref) {
-        get().refsStack.push(ref);
+        getUnsafe().refsStack.push(ref);
     }
 
     public static void pushInt(int i) {
-        get().intsStack.push(i);
+        getUnsafe().intsStack.push(i);
     }
 
     public static void pushDouble(double d) {
-        get().doublesStack.push(d);
+        getUnsafe().doublesStack.push(d);
     }
 
     public static void pushFloat(float f) {
-        get().floatsStack.push(f);
+        getUnsafe().floatsStack.push(f);
     }
 
     public static void pushLong(long l) {
-        get().longsStack.push(l);
+        getUnsafe().longsStack.push(l);
     }
 
     public static Integer popState() {
-        Stack<Integer> statesStack = get().statesStack;
+        Stack<Integer> statesStack = getUnsafe().statesStack;
         if (statesStack.empty()) return null;
         return statesStack.pop();
     }
 
     public static Object popRef() {
-        return get().refsStack.pop();
+        return getUnsafe().refsStack.pop();
     }
 
     public static int popInt() {
-        return get().intsStack.pop();
+        return getUnsafe().intsStack.pop();
     }
 
     public static double popDouble() {
-        return get().doublesStack.pop();
+        return getUnsafe().doublesStack.pop();
     }
 
     public static float popFloat() {
-        return get().floatsStack.pop();
+        return getUnsafe().floatsStack.pop();
     }
 
     public static long popLong() {
-        return get().longsStack.pop();
+        return getUnsafe().longsStack.pop();
     }
 
     public static boolean isYielding() {
-        return get() != null && get().isYielding;
+        final Coro coro = getSafe();
+        return coro != null && coro.isYielding;
     }
 
     public void close() throws Exception {

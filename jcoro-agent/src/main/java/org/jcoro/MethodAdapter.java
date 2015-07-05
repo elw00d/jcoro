@@ -44,7 +44,7 @@ public class MethodAdapter extends MethodVisitor {
     @Override
     public void visitCode() {
         // if (Coro.get() == null) goto noActiveCoroLabel;
-        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "get", "()Lorg/jcoro/Coro;", false);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "getSafe", "()Lorg/jcoro/Coro;", false);
         Label noActiveCoroLabel = new Label();
         //mv.visitFrame(Opcodes.F_SAME1, 0, null, 1, new Object[] {"Lorg/jcoro/Coro;"});
         mv.visitJumpInsn(Opcodes.IFNULL, noActiveCoroLabel);

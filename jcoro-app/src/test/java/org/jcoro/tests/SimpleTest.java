@@ -12,7 +12,7 @@ import org.junit.Test;
  */
 public class SimpleTest {
     public static void main(String[] args) {
-        new SimpleTest().test2();
+        new SimpleTest().test();
     }
 
     @Test
