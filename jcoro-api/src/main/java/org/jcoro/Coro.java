@@ -22,15 +22,15 @@ public class Coro implements AutoCloseable {
         return activeCoro.get();
     }
 
-    private volatile boolean isYielding = false;
+    private boolean isYielding = false;
 
     public static Coro initSuspended(ICoroRunnable runnable) {
         return new Coro(runnable);
     }
 
-    private volatile Runnable deferFunc;
+    private Runnable deferFunc;
 
-    private volatile boolean suspendedAfterYield = false;
+    private boolean suspendedAfterYield = false;
 
     public void yield() {
         if (isYielding)
@@ -43,14 +43,19 @@ public class Coro implements AutoCloseable {
             suspendedAfterYield = false;
             return;
         }
-//        if (!suspendedAfterYield) {
-            isYielding = true;
-            get().refsStack.push(this); // Аргументы и this если есть
-//            suspendedAfterYield = true;
-//        }
+        isYielding = true;
+        get().refsStack.push(this); // Аргументы и this если есть
+    }
+
+    public void setDeferFunc(Runnable deferFunc) {
+        this.deferFunc = deferFunc;
     }
 
     public void yield(Runnable deferFunc) {
+        // Так как мы не инструментируем этот метод (он - библиотечный), а вызов этого метода
+        // является точкой восстановления (как и yield() без параметров), то
+        // мы должны быть аккуратными в месте вызова этого метода, и не менять состояние this,
+        // если мы оказались в этом методе при восстановлении стека (при вызове yield(null)).
         // Иначе при восстановлении стека можно неожиданно обнулить deferFunc,
         // а выше по стеку тоже был вызов resume() - например если одна асинхронная операция
         // выполняется в том же потоке, в котором была запланирована
@@ -60,18 +65,11 @@ public class Coro implements AutoCloseable {
         yield();
     }
 
-    private static ThreadLocal<Integer> resumeCallsInStack = new ThreadLocal<>();
-
     public void start() {
         resume();
     }
 
     public void resume() {
-        Integer integer = resumeCallsInStack.get();
-        resumeCallsInStack.set((integer == null ? 0 : integer) +1);
-        if (integer != null && integer > 0) {
-            System.out.println("Error!!1");
-        }
         if (null != activeCoro.get()) {
             throw new AssertionError("This shouldn't happen");
         }
@@ -87,25 +85,28 @@ public class Coro implements AutoCloseable {
             activeCoro.remove();
         }
         // Call defer func
-        try {
-            if (deferFunc != null) {
-                Runnable deferFuncCopy = deferFunc;
-                deferFunc = null;
-                deferFuncCopy.run();
-            }
-        } finally {
-
+        if (deferFunc != null) {
+            // Обнуляем deferFunc перед вызовом, т.к. внутри deferFunc может быть любой код,
+            // в том числе и приводящий к рекурсивному вызову resume() - например если
+            // запланированная в deferFunc асинхронная операция выполняется мгновенно в вызывающем потоке
+            // В этом случае при вызове coro,resume() из callback'a вложенной асинхронной операции
+            // resume() увидит deferFunc, уже выполняющийся, и выполнит его ещё раз. Скорее всего,
+            // это приведёт к тому, что крайний вызов будет лишним, а resume() выполнится ещё один раз,
+            // когда уже не будет сохранённого state, и сопрограмма начнёт выполняться сначала.
+            // В общем, произойдёт полное разрушение потока выполнения
+            Runnable deferFuncCopy = deferFunc;
+            deferFunc = null;
+            deferFuncCopy.run();
         }
-        resumeCallsInStack.set(resumeCallsInStack.get()-1);
     }
 
-    private volatile Stack<Integer> statesStack = new Stack<>();
+    private Stack<Integer> statesStack = new Stack<>();
 
-    private volatile Stack<Object> refsStack = new Stack<>();
-    private volatile Stack<Integer> intsStack = new Stack<>();
-    private volatile Stack<Double> doublesStack = new Stack<>();
-    private volatile Stack<Float> floatsStack = new Stack<>();
-    private volatile Stack<Long> longsStack = new Stack<>();
+    private Stack<Object> refsStack = new Stack<>();
+    private Stack<Integer> intsStack = new Stack<>();
+    private Stack<Double> doublesStack = new Stack<>();
+    private Stack<Float> floatsStack = new Stack<>();
+    private Stack<Long> longsStack = new Stack<>();
 
     public static void pushState(int state) {
         get().statesStack.push(state);
