@@ -147,7 +147,7 @@ public class SyncaServer {
         Coro coro = Coro.get();
         final Integer[] res = new Integer[1];
         final Throwable[] exc = new Throwable[1];
-        coro.yield(() -> {
+        coro.setDeferFunc(() -> {
             channel.write(buffer, 5, TimeUnit.SECONDS, null, new CompletionHandler<Integer, Void>() {
                 @Override
                 public void completed(Integer result, Void attachment) {
@@ -166,6 +166,7 @@ public class SyncaServer {
                 }
             });
         });
+        coro.yield();
         if (exc[0] != null) throw new RuntimeException(exc[0]);
         return res[0];
     }
@@ -177,13 +178,10 @@ public class SyncaServer {
         System.out.println("Starting handling " + channel);
         ByteBuffer buffer = ByteBuffer.allocate(10 * 1024);
 
-        if (openChannels.get()==2) {
-            int x = 3;
-        }
-        Integer read = read(channel, buffer);
-        for (int i = 0; i < 10;i++){
-            int x = i * 3;
-        }
+        read(channel, buffer);
+//        for (int i = 0; i < 10;i++){
+//            int x = i * 3;
+//        }
 //        System.out.println("Readed from " + channel);
         //System.out.print("d");
 //        System.out.println(String.format("Readed %d bytes", read));
@@ -192,9 +190,9 @@ public class SyncaServer {
 
         try {
             System.out.println("Closing " + channel);
-            channel.close();
             int nOpen = openChannels.decrementAndGet();
             System.out.println("Open channels: " + nOpen);
+            channel.close();
         } catch (IOException e) {
             e.printStackTrace();
         }

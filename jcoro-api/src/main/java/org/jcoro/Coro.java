@@ -50,6 +50,10 @@ public class Coro implements AutoCloseable {
 //        }
     }
 
+    public void setDeferFunc(Runnable deferFunc) {
+        this.deferFunc = deferFunc;
+    }
+
     public void yield(Runnable deferFunc) {
         this.deferFunc = deferFunc;
         yield();
@@ -64,8 +68,8 @@ public class Coro implements AutoCloseable {
     public void resume() {
         Integer integer = resumeCallsInStack.get();
         resumeCallsInStack.set((integer == null ? 0 : integer) +1);
-        if (integer != null && integer > 1) {
-            System.out.println("Error!!1");
+        if (integer != null && integer > 0) {
+            //System.out.println("Error!!1");
         }
         if (null != activeCoro.get()) {
             throw new AssertionError("This shouldn't happen");
