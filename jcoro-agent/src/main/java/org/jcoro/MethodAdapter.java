@@ -16,7 +16,6 @@ public class MethodAdapter extends MethodVisitor {
     private final MethodAnalyzeResult analyzeResult;
 
     private final boolean isStatic;
-    private final boolean rootCall;
     private final Type returnType;
 
     private int insnIndex = 0; // Currently monitoring index of original instruction
@@ -24,12 +23,11 @@ public class MethodAdapter extends MethodVisitor {
     private int restorePointsProcessed = 0;
 
     public MethodAdapter(int api, MethodVisitor mv, MethodAnalyzeResult methodAnalyzeResult,
-                         boolean isStatic, boolean rootCall, Type returnType) {
+                         boolean isStatic, Type returnType) {
         super(api, mv);
         //
         this.analyzeResult = methodAnalyzeResult;
         this.isStatic = isStatic;
-        this.rootCall = rootCall;
         this.returnType = returnType;
     }
 
@@ -117,7 +115,7 @@ public class MethodAdapter extends MethodVisitor {
             stacks[stacks.length - 1] = additionalStackOperand;
         }
         Object[] fixedLocals = fixLocals(locals);
-        mv.visitFrame(Opcodes.F_FULL, fixedLocals.length, fixedLocals, stacks.length, stacks);
+        callVisitFrame(Opcodes.F_FULL, fixedLocals.length, fixedLocals, stacks.length, stacks);
     }
 
     private void visitNextFrame() {
@@ -131,7 +129,7 @@ public class MethodAdapter extends MethodVisitor {
             stacks[i] = convertFrameOperandToInsn(frame.getStack(i));
         }
         Object[] fixedLocals = fixLocals(locals);
-        mv.visitFrame(Opcodes.F_FULL, fixedLocals.length, fixLocals(locals), stacks.length, stacks);
+        callVisitFrame(Opcodes.F_FULL, fixedLocals.length, fixLocals(locals), stacks.length, stacks);
     }
 
     private void visitCurrentFrameWithoutStack() {
@@ -148,7 +146,13 @@ public class MethodAdapter extends MethodVisitor {
             locals[j] = Opcodes.TOP;
         }
         Object[] fixedLocals = fixLocals(locals);
-        mv.visitFrame(Opcodes.F_FULL, fixedLocals.length, fixLocals(locals), 0, new Object[0]);
+        callVisitFrame(Opcodes.F_FULL, fixedLocals.length, fixLocals(locals), 0, new Object[0]);
+    }
+
+    private void callVisitFrame(int type, int nLocal, Object[] local, int nStack,
+                                Object[] stack) {
+        mv.visitFrame(type, nLocal, local, nStack, stack);
+        noInsnsSinceLastFrame = true;
     }
 
     private Object[] fixLocals(Object[] locals) {
@@ -361,52 +365,54 @@ public class MethodAdapter extends MethodVisitor {
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushDouble", "(D)V", false);
                     }
                 }
+                // Finally, save "this" if method is instance method and
+                // if method is not root call in coro-usage calls hierarchy
+                if (!isStatic) {
+                    assert frame.getLocals() >= 1; // At least one local ("this") should be present
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "isRootCall", "()Z", false);
+                    Label noSaveThisLabel = new Label();
+                    mv.visitJumpInsn(Opcodes.IFNE, noSaveThisLabel);
+                    mv.visitVarInsn(Opcodes.ALOAD, 0);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
+                    mv.visitLabel(noSaveThisLabel);
+                    visitNextFrame();
+                }
+
                 // Save the state
                 mv.visitLdcInsn(restorePointsProcessed);
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushState", "(I)V", false);
-                // Finally, save "this" if method is instance method and if method is not rootCall in coro-usage calls hierarchy
-                // (if it isn't ICoroRunnable.run() method implementation)
-                if (!isStatic && !rootCall) {
-                    assert frame.getLocals() >= 1; // At least one local ("this") should be present
-                    mv.visitVarInsn(Opcodes.ALOAD, 0);
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
-                }
+
                 // And return
-                if (!rootCall) {
-                    // Push default value for return type
-                    visitLdcDefaultValueForType(returnType);
-                    //
-                    final int type = returnType.getSort();
-                    switch (type) {
-                        case Type.VOID:
-                            mv.visitInsn(Opcodes.RETURN);
-                            break;
-                        case Type.OBJECT:
-                        case Type.ARRAY:
-                            mv.visitInsn(Opcodes.ARETURN);
-                            break;
-                        // https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.9.2
-                        case Type.INT:
-                        case Type.SHORT:
-                        case Type.BYTE:
-                        case Type.BOOLEAN:
-                        case Type.CHAR:
-                            mv.visitInsn(Opcodes.IRETURN);
-                            break;
-                        case Type.LONG:
-                            mv.visitInsn(Opcodes.LRETURN);
-                            break;
-                        case Type.DOUBLE:
-                            mv.visitInsn(Opcodes.DRETURN);
-                            break;
-                        case Type.FLOAT:
-                            mv.visitInsn(Opcodes.FRETURN);
-                            break;
-                        default:
-                            throw new AssertionError("This shouldn't happen");
-                    }
-                } else {
-                    mv.visitInsn(Opcodes.RETURN);
+                visitLdcDefaultValueForType(returnType); // Push default value for return type
+                //
+                final int type = returnType.getSort();
+                switch (type) {
+                    case Type.VOID:
+                        mv.visitInsn(Opcodes.RETURN);
+                        break;
+                    case Type.OBJECT:
+                    case Type.ARRAY:
+                        mv.visitInsn(Opcodes.ARETURN);
+                        break;
+                    // https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.9.2
+                    case Type.INT:
+                    case Type.SHORT:
+                    case Type.BYTE:
+                    case Type.BOOLEAN:
+                    case Type.CHAR:
+                        mv.visitInsn(Opcodes.IRETURN);
+                        break;
+                    case Type.LONG:
+                        mv.visitInsn(Opcodes.LRETURN);
+                        break;
+                    case Type.DOUBLE:
+                        mv.visitInsn(Opcodes.DRETURN);
+                        break;
+                    case Type.FLOAT:
+                        mv.visitInsn(Opcodes.FRETURN);
+                        break;
+                    default:
+                        throw new AssertionError("This shouldn't happen");
                 }
             }
             mv.visitLabel(noSaveContextLabel);
@@ -424,19 +430,11 @@ public class MethodAdapter extends MethodVisitor {
     }
 
     @Override
-    public void visitFrame(int type, int nLocal, Object[] local, int nStack, Object[] stack) {
-        assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.FRAME;
-        //
-        this.visitCurrentFrame(null);
-        //
-        insnIndex++;
-    }
-
-    @Override
     public void visitFieldInsn(int opcode, String owner, String name, String desc) {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.FIELD_INSN;
         super.visitFieldInsn(opcode, owner, name, desc);
         insnIndex++;
+        noInsnsSinceLastFrame = false;
     }
 
     @Override
@@ -444,6 +442,7 @@ public class MethodAdapter extends MethodVisitor {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.INSN;
         super.visitInsn(opcode);
         insnIndex++;
+        noInsnsSinceLastFrame = false;
     }
 
     @Override
@@ -451,6 +450,7 @@ public class MethodAdapter extends MethodVisitor {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.INT_INSN;
         super.visitIntInsn(opcode, operand);
         insnIndex++;
+        noInsnsSinceLastFrame = false;
     }
 
     @Override
@@ -458,6 +458,7 @@ public class MethodAdapter extends MethodVisitor {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.VAR_INSN;
         super.visitVarInsn(opcode, var);
         insnIndex++;
+        noInsnsSinceLastFrame = false;
     }
 
     @Override
@@ -465,6 +466,7 @@ public class MethodAdapter extends MethodVisitor {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.TYPE_INSN;
         super.visitTypeInsn(opcode, type);
         insnIndex++;
+        noInsnsSinceLastFrame = false;
     }
 
     /**
@@ -481,6 +483,7 @@ public class MethodAdapter extends MethodVisitor {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.INVOKE_DYNAMIC_INSN;
         super.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
         insnIndex++;
+        noInsnsSinceLastFrame = false;
     }
 
     @Override
@@ -488,13 +491,7 @@ public class MethodAdapter extends MethodVisitor {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.JUMP_INSN;
         super.visitJumpInsn(opcode, label);
         insnIndex++;
-    }
-
-    @Override
-    public void visitLabel(Label label) {
-        assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.LABEL;
-        super.visitLabel(label);
-        insnIndex++;
+        noInsnsSinceLastFrame = false;
     }
 
     @Override
@@ -502,6 +499,7 @@ public class MethodAdapter extends MethodVisitor {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.LDC_INSN;
         super.visitLdcInsn(cst);
         insnIndex++;
+        noInsnsSinceLastFrame = false;
     }
 
     @Override
@@ -509,6 +507,7 @@ public class MethodAdapter extends MethodVisitor {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.IINC_INSN;
         super.visitIincInsn(var, increment);
         insnIndex++;
+        noInsnsSinceLastFrame = false;
     }
 
     @Override
@@ -516,6 +515,7 @@ public class MethodAdapter extends MethodVisitor {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.TABLESWITCH_INSN;
         super.visitTableSwitchInsn(min, max, dflt, labels);
         insnIndex++;
+        noInsnsSinceLastFrame = false;
     }
 
     @Override
@@ -523,12 +523,37 @@ public class MethodAdapter extends MethodVisitor {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.LOOKUPSWITCH_INSN;
         super.visitLookupSwitchInsn(dflt, keys, labels);
         insnIndex++;
+        noInsnsSinceLastFrame = false;
     }
 
     @Override
     public void visitMultiANewArrayInsn(String desc, int dims) {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.MULTIANEWARRAY_INSN;
         super.visitMultiANewArrayInsn(desc, dims);
+        insnIndex++;
+        noInsnsSinceLastFrame = false;
+    }
+
+    private boolean noInsnsSinceLastFrame = true;
+
+    @Override
+    public void visitFrame(int type, int nLocal, Object[] local, int nStack, Object[] stack) {
+        assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.FRAME;
+
+        // Если эту проверку убрать, возможны случаи, когда подряд будут идти 2 фрейма, а между ними
+        // ни одной значащей инструкции. В этой ситуации ASM ругнётся IllegalStateException, т.к. ожидает
+        // в таких случаях только фрейм с типом SAME
+        if (!noInsnsSinceLastFrame) {
+            this.visitCurrentFrame(null);
+        }
+
+        insnIndex++;
+    }
+
+    @Override
+    public void visitLabel(Label label) {
+        assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.LABEL;
+        super.visitLabel(label);
         insnIndex++;
     }
 

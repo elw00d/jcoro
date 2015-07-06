@@ -122,16 +122,9 @@ public class InstrumentProgram {
 
                 wasModified = true;
 
-                // Если метод - первый, кого зовёт движок сопрограмм, то его нужно инструментировать
-                // особым образом - так, чтобы он не записывал this в стек при сохранении фрейма,
-                // (как если бы это был статический метод), т.к. подкладывать this под вызов уже будет некому -
-                // мы вызываем run() напрямую
-                boolean methodImplementsICoroRunnable = "run".equals(name); // todo : more precise detection
-
                 return new MethodAdapter(Opcodes.ASM5, super.visitMethod(access, name, desc, signature, exceptions),
                         analyzeResult,
                         (access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC,
-                        methodImplementsICoroRunnable,
                         Type.getType(desc).getReturnType());
             }
         };

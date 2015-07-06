@@ -206,6 +206,16 @@ public class Coro implements AutoCloseable {
         return coro != null && coro.isYielding;
     }
 
+    /**
+     * Возвращает true, если мы находимся в верхнем фрейме сопрограммы (массив states пуст).
+     * Это необходимо для того, чтобы не выполнять pushObject(instance) для верхнего фрейма, т.к.
+     * его мы вызываем сами, и instance нам известен, а лишний объект в objectsStack будет некуда деть.
+     * Вызывается сгенерированным кодом при сохранении состояния.
+     */
+    public static boolean isRootCall() {
+        return getUnsafe().statesStack.empty();
+    }
+
     public void close() throws Exception {
 
     }
