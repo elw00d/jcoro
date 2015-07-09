@@ -27,12 +27,8 @@ public class SyncaServer {
             listener.accept(null, new CompletionHandler<AsynchronousSocketChannel, Void>() {
                 @Override
                 public void completed(AsynchronousSocketChannel result, Void attachment) {
-                    try {
-                        res[0] = result;
-                        coro.resume();
-                    } catch (Throwable e) {
-                        e.printStackTrace();
-                    }
+                    res[0] = result;
+                    coro.resume();
                 }
 
                 @Override
@@ -102,22 +98,14 @@ public class SyncaServer {
             channel.read(buffer, 5, TimeUnit.SECONDS, null, new CompletionHandler<Integer, Void>() {
                 @Override
                 public void completed(Integer result, Void attachment) {
-                    try {
-                        res[0] = result;
-                        coro.resume();
-                    } catch (Throwable e) {
-                        e.printStackTrace();
-                    }
+                    res[0] = result;
+                    coro.resume();
                 }
 
                 @Override
                 public void failed(Throwable e, Void attachment) {
-                    try {
-                        exc[0] = e;
-                        coro.resume();
-                    } catch(Throwable ex) {
-                        ex.printStackTrace();
-                    }
+                    exc[0] = e;
+                    coro.resume();
                 }
             });
         });
@@ -136,12 +124,8 @@ public class SyncaServer {
             channel.write(buffer, 5, TimeUnit.SECONDS, null, new CompletionHandler<Integer, Void>() {
                 @Override
                 public void completed(Integer result, Void attachment) {
-                    try {
-                        res[0] = result;
-                        coro.resume();
-                    } catch (Throwable e) {
-                        e.printStackTrace();
-                    }
+                    res[0] = result;
+                    coro.resume();
                 }
 
                 @Override
