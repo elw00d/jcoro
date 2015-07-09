@@ -62,23 +62,46 @@ public class MethodAnalyzer extends MethodVisitor {
                     assert "value".equals(this.values.get(0));
                     List<AnnotationNode> restorePoints = (List<AnnotationNode>) this.values.get(1);
                     declaredRestorePoints = restorePoints.stream().map(annotationNode -> {
-                        assert "value".equals(annotationNode.values.get(0));
-                        String value = (String) annotationNode.values.get(1);
-                        if (annotationNode.values.size() > 2) {
-                            assert "desc".equals(annotationNode.values.get(2));
+                        String value = "";
+                        String desc = "";
+                        boolean patchable = true;
+                        for (int i = 0; i < annotationNode.values.size(); i+= 2) {
+                            final String name = (String) annotationNode.values.get(i);
+                            switch (name) {
+                                case "value": {
+                                    value = (String) annotationNode.values.get(i + 1);
+                                    break;
+                                }
+                                case "desc": {
+                                    desc = (String) annotationNode.values.get(i + 1);
+                                    break;
+                                }
+                                case "patchable": {
+                                    patchable = (Boolean) annotationNode.values.get(i + 1);
+                                    break;
+                                }
+                                default:{
+                                    throw new UnsupportedOperationException("Unknown @RestorePoint property: " + name);
+                                }
+                            }
                         }
-                        String desc = annotationNode.values.size() > 2
-                                ? (String) annotationNode.values.get(3)
-                                : "";
+                        final String _value = value;
+                        final String _desc = desc;
+                        final boolean _patchable = patchable;
                         return new RestorePoint() {
                             @Override
                             public String value() {
-                                return value;
+                                return _value;
                             }
 
                             @Override
                             public String desc() {
-                                return desc;
+                                return _desc;
+                            }
+
+                            @Override
+                            public boolean patchable() {
+                                return _patchable;
                             }
 
                             @Override

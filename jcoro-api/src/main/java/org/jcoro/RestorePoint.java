@@ -17,4 +17,7 @@ public @interface RestorePoint {
 
     // Not required
     String desc() default "";
+
+    // Not required
+    boolean patchable() default true;
 }
