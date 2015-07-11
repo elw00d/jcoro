@@ -81,7 +81,9 @@ public class MethodAdapter extends MethodVisitor {
     private Object convertFrameOperandToInsn(Value value) {
         final BasicValue local = (BasicValue) value;
         if (local.isReference()) {
-            return local.getType().getDescriptor();
+            String descriptor = local.getType().getDescriptor();
+            if ("Lnull;".equals(descriptor)) return Opcodes.NULL;
+            return descriptor;
         } else if (local == BasicValue.RETURNADDRESS_VALUE) {
             // Эта штука возможна только в старый версиях джавы - когда в рамках метода можно было
             // делать подпрограммы (см инструкции jsr и ret) - после выхода джавы 1.6 это уже не актуально
@@ -229,8 +231,12 @@ public class MethodAdapter extends MethodVisitor {
                         // do nothing
                     } else if (local.isReference()) {
                         final String typeDescriptor = local.getType().getDescriptor();
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
-                        mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
+                        if (!"Lnull;".equals(typeDescriptor)) {
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
+                            mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
+                        } else {
+                            mv.visitInsn(Opcodes.ACONST_NULL);
+                        }
                         mv.visitVarInsn(Opcodes.ASTORE, i);
                     } else if (local == BasicValue.INT_VALUE) {
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popInt", "()I", false);
@@ -262,8 +268,11 @@ public class MethodAdapter extends MethodVisitor {
                         // do nothing
                     } else if (local.isReference()) {
                         final String typeDescriptor = local.getType().getDescriptor();
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
-                        mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
+                        if (!"Lnull;".equals(typeDescriptor)) {
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
+                            mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
+                        } else
+                            mv.visitInsn(Opcodes.ACONST_NULL);
                     } else if (local == BasicValue.INT_VALUE) {
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popInt", "()I", false);
                     } else if (local == BasicValue.LONG_VALUE) {
@@ -284,6 +293,8 @@ public class MethodAdapter extends MethodVisitor {
                         // do nothing
                     } else if (local.isReference()) {
                         final String typeDescriptor = local.getType().getDescriptor();
+                        if ("Lnull;".equals(typeDescriptor))
+                            throw new AssertionError("This shouldn't happen");
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
                         mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
                     } else if (local == BasicValue.INT_VALUE) {
