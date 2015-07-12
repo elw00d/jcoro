@@ -161,7 +161,7 @@ public class MethodAdapter extends MethodVisitor {
         List<Object> fixed = new ArrayList<>();
         for (int i = 0; i < locals.length; i++) {
             fixed.add(locals[i]);
-            if (locals[i] == Opcodes.DOUBLE) {
+            if (locals[i] == Opcodes.DOUBLE || locals[i] == Opcodes.LONG) {
                 i++; // skip next
             }
         }
