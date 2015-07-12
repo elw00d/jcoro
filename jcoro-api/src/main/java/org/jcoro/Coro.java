@@ -119,6 +119,10 @@ public class Coro implements AutoCloseable {
         pushCoro(this);
         try {
             // Call coro func
+            if (suspendedAfterYield) {
+                Object rootInstance = popRef();
+                if (rootInstance != runnable) throw new AssertionError("This shouldn't happen");
+            }
             runnable.run();
         } finally {
             if (isYielding) {
@@ -213,7 +217,8 @@ public class Coro implements AutoCloseable {
      * Вызывается сгенерированным кодом при сохранении состояния.
      */
     public static boolean isRootCall() {
-        return getUnsafe().statesStack.empty();
+        // todo: убрать всё это, не работает и реализовано теперь сильно проще прямо внутри resume()
+        return false; // getUnsafe().statesStack.empty();
     }
 
     public void close() throws Exception {
