@@ -49,7 +49,7 @@ public class Program {
         }
         File destDir = new File(destDirPath);
         if (!destDir.exists()) {
-            if (!destDir.mkdir()) {
+            if (!destDir.mkdirs()) {
                 System.out.println("Cannot create destination directory");
                 System.exit(-1);
             }
