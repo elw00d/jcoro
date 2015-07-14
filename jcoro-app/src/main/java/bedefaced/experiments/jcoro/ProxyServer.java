@@ -38,13 +38,8 @@ public class ProxyServer implements Runnable {
             System.err.println("usage: <port> <host> <port>");
             return;
         }
-        new Thread(new ProxyServer(null, Integer.valueOf(args[0]), args[1],
-                Integer.valueOf(args[2]))).start();
-        try {
-            Thread.sleep(999999999);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
+        new ProxyServer(null, Integer.valueOf(args[0]), args[1],
+            Integer.valueOf(args[2])).run();
     }
 
     @Override
@@ -72,6 +67,14 @@ public class ProxyServer implements Runnable {
                             .accept(serverChannel);
 
                     AsynchronousSocketChannel remote = null;
+                    try {
+                        remote = AsynchronousSocketChannel.open();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                    final AsynchronousSocketChannel finalRemote = remote;
+
                     SocketChannel.connect(remote, new InetSocketAddress(
                             remoteAddress, portremote));
 
@@ -85,7 +88,7 @@ public class ProxyServer implements Runnable {
                                         SocketChannel.read(client,
                                                 readClientBuffer);
                                         readClientBuffer.flip();
-                                        SocketChannel.write(remote,
+                                        SocketChannel.write(finalRemote,
                                                 readClientBuffer);
                                     }
                                 }
@@ -99,7 +102,7 @@ public class ProxyServer implements Runnable {
                                 @Instrument({@RestorePoint("read"), @RestorePoint("write")})
                                 public void run() {
                                     while (true) {
-                                        SocketChannel.read(remote,
+                                        SocketChannel.read(finalRemote,
                                                 readRemoteBuffer);
                                         readRemoteBuffer.flip();
                                         SocketChannel.write(client,

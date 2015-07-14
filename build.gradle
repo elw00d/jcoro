@@ -139,8 +139,14 @@ project(':jcoro-app') {
         }
     }
 
+    jar {
+        doFirst {
+            sourceSets.main.output.classesDir = "build/classes/instrumented"
+        }
+        dependsOn instrumentClasses
+    }
+
     instrumentClasses.dependsOn classes
-    jar.dependsOn instrumentClasses
 
     test.dependsOn instrumentTestClasses
     instrumentTestClasses.dependsOn testClasses
