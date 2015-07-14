@@ -82,7 +82,10 @@ public class MethodAdapter extends MethodVisitor {
         final BasicValue local = (BasicValue) value;
         if (local.isReference()) {
             String descriptor = local.getType().getDescriptor();
-            if ("Lnull;".equals(descriptor)) return Opcodes.NULL;
+            if ("Lnull;".equals(descriptor)) {
+                throw new AssertionError("This shouldn't happen. Bug in Asm ?");
+                //return Opcodes.NULL;
+            }
             return descriptor;
         } else if (local == BasicValue.RETURNADDRESS_VALUE) {
             // Эта штука возможна только в старый версиях джавы - когда в рамках метода можно было
@@ -90,16 +93,29 @@ public class MethodAdapter extends MethodVisitor {
             throw new UnsupportedOperationException("Frames with old opcodes (subroutines) are not supported");
         } else if (local == BasicValue.UNINITIALIZED_VALUE) {
             return Opcodes.TOP;
-        } else if (local == BasicValue.INT_VALUE) {
-            return Opcodes.INTEGER;
-        } else if (local == BasicValue.LONG_VALUE) {
-            return Opcodes.LONG;
-        } else if (local == BasicValue.FLOAT_VALUE) {
-            return Opcodes.FLOAT;
-        } else if (local == BasicValue.DOUBLE_VALUE) {
-            return Opcodes.DOUBLE;
         } else {
-            throw new AssertionError("This shouldn't happen");
+            final int sort = local.getType().getSort();
+            switch (sort) {
+                case Type.VOID:
+                case Type.OBJECT:
+                case Type.ARRAY:
+                    // Should be already processed in if (isReference()) case
+                    throw new AssertionError("This shouldn't happen");
+                case Type.INT:
+                case Type.SHORT:
+                case Type.BYTE:
+                case Type.BOOLEAN:
+                case Type.CHAR:
+                    return Opcodes.INTEGER;
+                case Type.LONG:
+                    return Opcodes.LONG;
+                case Type.DOUBLE:
+                    return Opcodes.DOUBLE;
+                case Type.FLOAT:
+                    return Opcodes.FLOAT;
+                default:
+                    throw new AssertionError("This shouldn't happen");
+            }
         }
     }
 

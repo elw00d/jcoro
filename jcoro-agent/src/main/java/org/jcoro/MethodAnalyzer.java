@@ -1,9 +1,7 @@
 package org.jcoro;
 
 import org.objectweb.asm.*;
-import org.objectweb.asm.tree.AbstractInsnNode;
-import org.objectweb.asm.tree.AnnotationNode;
-import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
 
 import java.lang.annotation.Annotation;
@@ -150,6 +148,32 @@ public class MethodAnalyzer extends MethodVisitor {
         super.visitMethodInsn(opcode, owner, name, desc, itf);
     }
 
+    private static class LocalVarInfo {
+        String name;
+        String desc;
+        String signature;
+        Label start;
+        Label end;
+        int index;
+
+        public LocalVarInfo(String name, String desc, String signature, Label start, Label end, int index) {
+            this.name = name;
+            this.desc = desc;
+            this.signature = signature;
+            this.start = start;
+            this.end = end;
+            this.index = index;
+        }
+    }
+
+    private List<LocalVarInfo> localVars = new ArrayList<>();
+
+    @Override
+    public void visitLocalVariable(String name, String desc, String signature, Label start, Label end, int index) {
+        localVars.add(new LocalVarInfo(name, desc, signature, start, end, index));
+        super.visitLocalVariable(name, desc, signature, start, end, index);
+    }
+
     @Override
     public void visitEnd() {
         // Нужно ли записывать собранные данные в выходные мапы
@@ -198,6 +222,28 @@ public class MethodAnalyzer extends MethodVisitor {
         Frame[] frames;
         try {
             frames = analyzer.analyze(owner, mn);
+
+            localVars.forEach(localVarInfo -> {
+                LabelNode startLabel = (LabelNode) localVarInfo.start.info; // inclusive
+                LabelNode endLabel = (LabelNode) localVarInfo.end.info; // exclusive
+                boolean meetStart = false;
+                boolean meetEnd = false;
+                for (int i = 0; i < insns.length; i++) {
+                    if (insns[i] == startLabel) {
+                        meetStart = true;
+                    }
+                    if (insns[i] == endLabel) {
+                        meetEnd = true;
+                    }
+                    if (meetStart && !meetEnd) {
+                        Value oldLocal = frames[i].getLocal(localVarInfo.index);
+                        BasicValue newLocal = new BasicValue(Type.getType(localVarInfo.desc));
+                        if (!((BasicValue) oldLocal).getType().getDescriptor().equals(localVarInfo.desc)) {
+                            frames[i].setLocal(localVarInfo.index, newLocal);
+                        }
+                    }
+                }
+            });
         } catch (AnalyzerException e) {
             throw new RuntimeException("Cannot analyze method", e);
         }

@@ -17,11 +17,11 @@ import org.jcoro.nio.SocketChannel;
 
 public class ProxyServer implements Runnable {
 
-    private InetAddress hostAddress;
-    private int portlocal;
-    private InetAddress remoteAddress;
-    private int portremote;
-    private AsynchronousServerSocketChannel serverChannel;
+    public InetAddress hostAddress;
+    public int portlocal;
+    public InetAddress remoteAddress;
+    public int portremote;
+    public AsynchronousServerSocketChannel serverChannel;
 
     public ProxyServer(InetAddress hostAddress, int portlocal,
                        String remotehost, int portremote) throws UnknownHostException {
@@ -72,6 +72,14 @@ public class ProxyServer implements Runnable {
                             .accept(serverChannel);
 
                     AsynchronousSocketChannel remote = null;
+                    try {
+                        remote = AsynchronousSocketChannel.open();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                    final AsynchronousSocketChannel finalRemote = remote;
+
                     SocketChannel.connect(remote, new InetSocketAddress(
                             remoteAddress, portremote));
 
@@ -85,7 +93,7 @@ public class ProxyServer implements Runnable {
                                         SocketChannel.read(client,
                                                 readClientBuffer);
                                         readClientBuffer.flip();
-                                        SocketChannel.write(remote,
+                                        SocketChannel.write(finalRemote,
                                                 readClientBuffer);
                                     }
                                 }
@@ -99,7 +107,7 @@ public class ProxyServer implements Runnable {
                                 @Instrument({@RestorePoint("read"), @RestorePoint("write")})
                                 public void run() {
                                     while (true) {
-                                        SocketChannel.read(remote,
+                                        SocketChannel.read(finalRemote,
                                                 readRemoteBuffer);
                                         readRemoteBuffer.flip();
                                         SocketChannel.write(client,
