@@ -90,5 +90,5 @@ todo : В ядре
 
 11. Сделать FAQ
 
-12. Заменить везде сравнение BasicValue.XXX == yyy на switch(value.getType().getSort())
++ 12. Заменить везде сравнение BasicValue.XXX == yyy на switch(value.getType().getSort())
 тк теперь там могут быть другие значения
