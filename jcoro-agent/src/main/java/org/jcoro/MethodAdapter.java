@@ -293,7 +293,7 @@ public class MethodAdapter extends MethodVisitor {
                 }
                 // Восстанавливаем instance для вызова, если метод - экземплярный
                 if (!callingMethodIsStatic) {
-                    BasicValue local = (BasicValue) frame.getStack(0);
+                    BasicValue local = (BasicValue) frame.getStack(frame.getStackSize() - 1 - nArgs);
                     if (local == BasicValue.UNINITIALIZED_VALUE) {
                         // do nothing
                     } else if (local == BasicValue.RETURNADDRESS_VALUE) {
