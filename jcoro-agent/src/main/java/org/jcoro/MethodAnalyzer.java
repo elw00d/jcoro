@@ -223,6 +223,10 @@ public class MethodAnalyzer extends MethodVisitor {
         try {
             frames = analyzer.analyze(owner, mn);
 
+            // Корректируем инфу о типах значений локальных переменных с учётом таблиц переменных,
+            // которые записываются в class-файл. Без этого ASM иногда не может определить настоящий тип
+            // переменной (после инструкции aconst_null, например) и выдаёт в этом месте "Lnull;".
+            // Нас это не устраивает, мы не можем обрабатывать переменных, типа которых мы не знаем.
             localVars.forEach(localVarInfo -> {
                 LabelNode startLabel = (LabelNode) localVarInfo.start.info; // inclusive
                 LabelNode endLabel = (LabelNode) localVarInfo.end.info; // exclusive
@@ -244,6 +248,19 @@ public class MethodAnalyzer extends MethodVisitor {
                     }
                 }
             });
+
+            // Теперь окончательно проверяем, что фреймов с переменными типа "Lnull;" нигде не осталось
+            // В стеке, к сожалению, "Lnull;" возможны (после инструкций типа ACONST_NULL)
+            for (int i = 0; i < frames.length; i++) {
+                final Frame frame = frames[i];
+                if (frame != null) { // frame может быть null в конце методов, если крайние инструкции - что-то вроде labels
+                    for (int j = 0; j < frame.getLocals(); j++) {
+                        final BasicValue value = (BasicValue) frame.getLocal(j);
+                        if (value.getType() != null && "Lnull;".equals(value.getType().getDescriptor()))
+                            throw new AssertionError("This shouldn't happen. Bug in ASM ?");
+                    }
+                }
+            }
         } catch (AnalyzerException e) {
             throw new RuntimeException("Cannot analyze method", e);
         }

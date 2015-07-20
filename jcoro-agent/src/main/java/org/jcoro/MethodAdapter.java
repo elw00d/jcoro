@@ -81,12 +81,7 @@ public class MethodAdapter extends MethodVisitor {
     private Object convertFrameOperandToInsn(Value value) {
         final BasicValue local = (BasicValue) value;
         if (local.isReference()) {
-            String descriptor = local.getType().getDescriptor();
-            if ("Lnull;".equals(descriptor)) {
-                throw new AssertionError("This shouldn't happen. Bug in Asm ?");
-                //return Opcodes.NULL;
-            }
-            return descriptor;
+            return local.getType().getDescriptor();
         } else if (local == BasicValue.RETURNADDRESS_VALUE) {
             // Эта штука возможна только в старый версиях джавы - когда в рамках метода можно было
             // делать подпрограммы (см инструкции jsr и ret) - после выхода джавы 1.6 это уже не актуально
@@ -247,12 +242,8 @@ public class MethodAdapter extends MethodVisitor {
                         // do nothing
                     } else if (local.isReference()) {
                         final String typeDescriptor = local.getType().getDescriptor();
-                        if (!"Lnull;".equals(typeDescriptor)) {
-                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
-                            mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
-                        } else {
-                            mv.visitInsn(Opcodes.ACONST_NULL);
-                        }
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
+                        mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
                         mv.visitVarInsn(Opcodes.ASTORE, i);
                     } else if (local == BasicValue.INT_VALUE) {
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popInt", "()I", false);
@@ -355,7 +346,10 @@ public class MethodAdapter extends MethodVisitor {
                     } else if (local == BasicValue.RETURNADDRESS_VALUE) {
                         // do nothing
                     } else if (local.isReference()) {
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
+                        // Если здесь - null, то можно ничего не сохранять, а при восстановлении симметрично сделать ACONST_NULL
+                        final String typeDescriptor = local.getType().getDescriptor();
+                        if (!"Lnull;".equals(typeDescriptor))
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
                     } else if (local == BasicValue.INT_VALUE) {
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushInt", "(I)V", false);
                     } else if (local == BasicValue.LONG_VALUE) {
