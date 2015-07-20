@@ -1,12 +1,14 @@
 package org.jcoro;
 
 import org.objectweb.asm.*;
-import org.objectweb.asm.tree.*;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.AnnotationNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.analysis.*;
+import org.objectweb.asm.tree.analysis.Frame;
 
 import java.lang.annotation.Annotation;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.util.*;
 
 import static java.util.stream.Collectors.toList;
@@ -184,26 +186,6 @@ public class MethodAnalyzer extends MethodVisitor {
             return;
         }
 
-        // Делаем класслоадер, который умеет загружать исходный класс из массива байт
-        // Это нужно для работы верификатора
-//        class ByteClassLoader extends URLClassLoader {
-//            public ByteClassLoader(URL[] urls, ClassLoader parent) {
-//                super(urls, parent);
-//            }
-//
-//            @Override
-//            protected Class<?> findClass(final String name) throws ClassNotFoundException {
-//                // Этот класслоадер умеет грузить только анализируемый класс
-//                if (name.equals(methodId.className.replaceAll("/", "."))) {
-//                    return defineClass(name, classFile, 0, classFile.length);
-//                }
-//                return super.findClass(name);
-//            }
-//
-//        }
-//        ByteClassLoader classLoader = new ByteClassLoader(new URL[0], Thread.currentThread().getContextClassLoader());
-//        //
-
         Analyzer analyzer = new Analyzer(new SimpleVerifier() {
             @Override
             protected Class getClass(Type t) {
@@ -211,6 +193,8 @@ public class MethodAnalyzer extends MethodVisitor {
                     return super.getClass(t);
                 } catch (RuntimeException e) {
                     try {
+                        // Используем класслоадер, который умеет загружать исходный класс из массива байт
+                        // Это нужно для работы верификатора
                         return InstrumentProgram.classLoader.loadClass(t.getInternalName().replaceAll("/", "."));
                     } catch (ClassNotFoundException e1) {
                         throw new RuntimeException(e1);

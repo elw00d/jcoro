@@ -387,16 +387,10 @@ public class MethodAdapter extends MethodVisitor {
                     }
                 }
                 // Finally, save "this" if method is instance method and
-                // if method is not root call in coro-usage calls hierarchy
                 if (!isStatic) {
                     assert frame.getLocals() >= 1; // At least one local ("this") should be present
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "isRootCall", "()Z", false);
-                    Label noSaveThisLabel = new Label();
-                    mv.visitJumpInsn(Opcodes.IFNE, noSaveThisLabel);
                     mv.visitVarInsn(Opcodes.ALOAD, 0);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
-                    mv.visitLabel(noSaveThisLabel);
-                    visitNextFrame();
                 }
 
                 // Save the state
