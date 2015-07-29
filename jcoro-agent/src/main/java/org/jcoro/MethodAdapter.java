@@ -39,6 +39,119 @@ public class MethodAdapter extends MethodVisitor {
         return analyzeResult.getFrames()[insnIndex + 1];
     }
 
+    private static class TryCatchBlock {
+        Label start;
+        Label end;
+        Label handler;
+        String type;
+
+        public TryCatchBlock(Label start, Label end, Label handler, String type) {
+            this.start = start;
+            this.end = end;
+            this.handler = handler;
+            this.type = type;
+        }
+    }
+
+    // Участки [restorePointStart; noActiveCoro) и [afterCall; noSaveContext)
+    // не должны быть внутри try-catch блоков. А [noActiveCoro;afterCall) - должен быть в рамках try-catch.
+    // То есть мы делим исходный try-catch на три - до нового байткода, собственно вызов, и после нового байткода.
+    private static class TryCatchSplitInfo {
+        Label label_1;
+        Label label_2;
+//        Label afterCall;
+//        Label noSaveContext;
+    }
+    private List<TryCatchBlock> tryCatchBlocks = new ArrayList<>();
+    private List<TryCatchSplitInfo> tryCatchSplitInfos = new ArrayList<>();
+
+    @Override
+    public void visitTryCatchBlock(Label start, Label end, Label handler, String type) {
+        tryCatchBlocks.add(new TryCatchBlock(start, end, handler, type));
+        //super.visitTryCatchBlock(start, end, handler, type);
+    }
+
+    private boolean lastSplitWasFound;
+
+    // Возвращает список блоков, на которые был разбит исходный блок,
+    // или список размера 1 (содержащий исходный блок), если разбиение не нужно
+    private List<TryCatchBlock> splitIfNeed(TryCatchBlock block) {
+        int start = block.start.getOffset();
+        int end = block.end.getOffset();
+        lastSplitWasFound = false;
+        List<TryCatchBlock> result = new ArrayList<>();
+        for (TryCatchSplitInfo splitCandidate : tryCatchSplitInfos) {
+            int label_1 = splitCandidate.label_1.getOffset();
+            int label_2 = splitCandidate.label_2.getOffset();
+
+            if (label_1 >= start && label_1 <= end && label_2 >= start && label_2 <= end) {
+                // Интервал [label_1; label_2) находится внутри интервала [start; end)
+                // Вырезаем его - остаётся 2 интервала [start; label1) и [label2; end)
+                if (label_1 > start)
+                    result.add(new TryCatchBlock(block.start, splitCandidate.label_1, block.handler, block.type));
+                if (end > label_2)
+                    result.add(new TryCatchBlock(splitCandidate.label_2, block.end, block.handler, block.type));
+                lastSplitWasFound = true;
+                return result;
+            } else if (label_1 >= start && label_1 < end && label_2 >= end) {
+                // Интервал [label_1; label_2) касается интервала [start; end) справа
+                // Вырезаем его - остаётся один интервал [start; label1)
+                if (label_1 > start)
+                    result.add(new TryCatchBlock(block.start, splitCandidate.label_1, block.handler, block.type));
+                lastSplitWasFound = true;
+                return result;
+            } else if (label_1 < start && label_2 > start && label_2 <= end) {
+                // Интервал [label_1; label_2) касается интервала [start; end) слева
+                // Вырезаем его - остаётся один интервал [label2; end)
+                if (end > label_2)
+                    result.add(new TryCatchBlock(splitCandidate.label_2, block.end, block.handler, block.type));
+                lastSplitWasFound = true;
+                return result;
+            } else if (label_1 < start && label_2 >= end) {
+                // Интервал [label_1; label_2) не должен охватывать целиком [start; end),
+                // т.к. в генерируемом коде мы не добавляем своих try-catch блоков
+                throw new AssertionError("This shouldn't happen");
+            } else {
+                // Do nothing
+            }
+        }
+
+        final ArrayList<TryCatchBlock> tryCatchBlocks = new ArrayList<>();
+        tryCatchBlocks.add(block);
+        return tryCatchBlocks;
+    }
+
+    private List<TryCatchBlock> splitTryCatchBlocks() {
+        System.out.println("Split");
+        List<TryCatchBlock> blocksBefore = tryCatchBlocks;
+        List<TryCatchBlock> blocksAfter;
+        boolean anyChange;
+        do {
+            anyChange = false;
+            blocksAfter = new ArrayList<>();
+            for (TryCatchBlock block : blocksBefore) {
+                final List<TryCatchBlock> splittedBlocks = splitIfNeed(block);
+                if (lastSplitWasFound) {
+                    blocksAfter.addAll(splittedBlocks);
+                    anyChange = true;
+                } else {
+                    blocksAfter.add(block);
+                }
+            }
+            blocksBefore = blocksAfter;
+        } while (anyChange);
+        return blocksAfter;
+    }
+
+    @Override
+    public void visitEnd() {
+        final List<TryCatchBlock> splittedTryCatchBlocks = splitTryCatchBlocks();
+        for (TryCatchBlock tryCatchBlock : splittedTryCatchBlocks) {
+            mv.visitTryCatchBlock(tryCatchBlock.start, tryCatchBlock.end, tryCatchBlock.handler, tryCatchBlock.type);
+        }
+        super.visitEnd();
+    }
+
     @Override
     public void visitCode() {
         // if (Coro.get() == null) goto noActiveCoroLabel;
@@ -223,11 +336,16 @@ public class MethodAdapter extends MethodVisitor {
                 return;
             }
 
+            TryCatchSplitInfo tryCatchSplitInfo_1 = new TryCatchSplitInfo();
+            TryCatchSplitInfo tryCatchSplitInfo_2 = new TryCatchSplitInfo();
+
             Label noActiveCoroLabel = new Label();
+            tryCatchSplitInfo_1.label_2 = noActiveCoroLabel;
             mv.visitJumpInsn(Opcodes.GOTO, noActiveCoroLabel);
 
             // label_i:
             mv.visitLabel(restoreLabels[restorePointsProcessed]);
+            tryCatchSplitInfo_1.label_1 = restoreLabels[restorePointsProcessed];
 
             visitCurrentFrameWithoutStack();
 
@@ -349,8 +467,13 @@ public class MethodAdapter extends MethodVisitor {
             visitCurrentFrame(null);
             super.visitMethodInsn(opcode, owner, name, desc, itf);
 
+            Label afterCallLabel = new Label();
+            mv.visitLabel(afterCallLabel);
+            tryCatchSplitInfo_2.label_1 = afterCallLabel;
+
             mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "isYielding", "()Z", false);
             Label noSaveContextLabel = new Label();
+            tryCatchSplitInfo_2.label_2 = noSaveContextLabel;
             mv.visitJumpInsn(Opcodes.IFEQ, noSaveContextLabel);
 
             // Save the stack
@@ -493,6 +616,9 @@ public class MethodAdapter extends MethodVisitor {
             visitNextFrame();
 
             restorePointsProcessed++;
+
+            tryCatchSplitInfos.add(tryCatchSplitInfo_1);
+            tryCatchSplitInfos.add(tryCatchSplitInfo_2);
         } finally {
             insnIndex++;
         }
