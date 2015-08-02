@@ -53,34 +53,31 @@ public class MethodAdapter extends MethodVisitor {
         }
     }
 
-    // Участки [restorePointStart; noActiveCoro) и [afterCall; noSaveContext)
-    // не должны быть внутри try-catch блоков. А [noActiveCoro;afterCall) - должен быть в рамках try-catch.
-    // То есть мы делим исходный try-catch на три - до нового байткода, собственно вызов, и после нового байткода.
-    private static class TryCatchSplitInfo {
+    // Все участки [label_1; label_2) должны быть исключены из всех блоков try-catch в методе.
+    //
+    // Дело в том, что при инструментировании методов участки [restorePointStart; noActiveCoro) и [afterCall; noSaveContext)
+    // не должны быть внутри try-catch блоков. А собственно вызов (участок [noActiveCoro;afterCall) ) - должен быть в рамках try-catch
+    // (если таковой имеется). То есть мы делим исходный try-catch на три - до нового байткода, собственно вызов, и после нового байткода.
+    //
+    // Чтобы хранить информацию о том, какие участки нужно исключить из try-catch блоков, используем эту структуру.
+    private static class TryCatchExcludeBlock {
         Label label_1;
         Label label_2;
-//        Label afterCall;
-//        Label noSaveContext;
     }
     private List<TryCatchBlock> tryCatchBlocks = new ArrayList<>();
-    private List<TryCatchSplitInfo> tryCatchSplitInfos = new ArrayList<>();
+    private List<TryCatchExcludeBlock> tryCatchExcludeBlocks = new ArrayList<>();
 
     @Override
     public void visitTryCatchBlock(Label start, Label end, Label handler, String type) {
         tryCatchBlocks.add(new TryCatchBlock(start, end, handler, type));
-        //super.visitTryCatchBlock(start, end, handler, type);
     }
 
-    private boolean lastSplitWasFound;
-
-    // Возвращает список блоков, на которые был разбит исходный блок,
-    // или список размера 1 (содержащий исходный блок), если разбиение не нужно
-    private List<TryCatchBlock> splitIfNeed(TryCatchBlock block) {
+    // Возвращает true и заполняет result блоками, на которые был разбит исходный блок,
+    // Если блок не надо разбивать, возвращает false
+    private boolean splitIfNeed(TryCatchBlock block, List<TryCatchBlock> result) {
         int start = block.start.getOffset();
         int end = block.end.getOffset();
-        lastSplitWasFound = false;
-        List<TryCatchBlock> result = new ArrayList<>();
-        for (TryCatchSplitInfo splitCandidate : tryCatchSplitInfos) {
+        for (TryCatchExcludeBlock splitCandidate : tryCatchExcludeBlocks) {
             int label_1 = splitCandidate.label_1.getOffset();
             int label_2 = splitCandidate.label_2.getOffset();
 
@@ -91,22 +88,19 @@ public class MethodAdapter extends MethodVisitor {
                     result.add(new TryCatchBlock(block.start, splitCandidate.label_1, block.handler, block.type));
                 if (end > label_2)
                     result.add(new TryCatchBlock(splitCandidate.label_2, block.end, block.handler, block.type));
-                lastSplitWasFound = true;
-                return result;
+                return true;
             } else if (label_1 >= start && label_1 < end && label_2 >= end) {
                 // Интервал [label_1; label_2) касается интервала [start; end) справа
                 // Вырезаем его - остаётся один интервал [start; label1)
                 if (label_1 > start)
                     result.add(new TryCatchBlock(block.start, splitCandidate.label_1, block.handler, block.type));
-                lastSplitWasFound = true;
-                return result;
+                return true;
             } else if (label_1 < start && label_2 > start && label_2 <= end) {
                 // Интервал [label_1; label_2) касается интервала [start; end) слева
                 // Вырезаем его - остаётся один интервал [label2; end)
                 if (end > label_2)
                     result.add(new TryCatchBlock(splitCandidate.label_2, block.end, block.handler, block.type));
-                lastSplitWasFound = true;
-                return result;
+                return true;
             } else if (label_1 < start && label_2 >= end) {
                 // Интервал [label_1; label_2) не должен охватывать целиком [start; end),
                 // т.к. в генерируемом коде мы не добавляем своих try-catch блоков
@@ -115,14 +109,13 @@ public class MethodAdapter extends MethodVisitor {
                 // Do nothing
             }
         }
-
-        final ArrayList<TryCatchBlock> tryCatchBlocks = new ArrayList<>();
-        tryCatchBlocks.add(block);
-        return tryCatchBlocks;
+        return false;
     }
 
+    /**
+     * Выполняет разбиение всех блоков try-catch до тех пор, пока разбивать станет нечего.
+     */
     private List<TryCatchBlock> splitTryCatchBlocks() {
-        System.out.println("Split");
         List<TryCatchBlock> blocksBefore = tryCatchBlocks;
         List<TryCatchBlock> blocksAfter;
         boolean anyChange;
@@ -130,8 +123,8 @@ public class MethodAdapter extends MethodVisitor {
             anyChange = false;
             blocksAfter = new ArrayList<>();
             for (TryCatchBlock block : blocksBefore) {
-                final List<TryCatchBlock> splittedBlocks = splitIfNeed(block);
-                if (lastSplitWasFound) {
+                final List<TryCatchBlock> splittedBlocks = new ArrayList<>();
+                if (splitIfNeed(block, splittedBlocks)) {
                     blocksAfter.addAll(splittedBlocks);
                     anyChange = true;
                 } else {
@@ -336,8 +329,11 @@ public class MethodAdapter extends MethodVisitor {
                 return;
             }
 
-            TryCatchSplitInfo tryCatchSplitInfo_1 = new TryCatchSplitInfo();
-            TryCatchSplitInfo tryCatchSplitInfo_2 = new TryCatchSplitInfo();
+            // Первый блок, который должен быть исключён из всех try-catch блоков метода
+            // Блок обрамляет код восстановление контекста выполнения (последовательность pop-вызовов)
+            TryCatchExcludeBlock tryCatchSplitInfo_1 = new TryCatchExcludeBlock();
+            // Второй блок - обрамляет код сохранения контекста выполнения (последовательность push-вызовов)
+            TryCatchExcludeBlock tryCatchSplitInfo_2 = new TryCatchExcludeBlock();
 
             Label noActiveCoroLabel = new Label();
             tryCatchSplitInfo_1.label_2 = noActiveCoroLabel;
@@ -617,8 +613,8 @@ public class MethodAdapter extends MethodVisitor {
 
             restorePointsProcessed++;
 
-            tryCatchSplitInfos.add(tryCatchSplitInfo_1);
-            tryCatchSplitInfos.add(tryCatchSplitInfo_2);
+            tryCatchExcludeBlocks.add(tryCatchSplitInfo_1);
+            tryCatchExcludeBlocks.add(tryCatchSplitInfo_2);
         } finally {
             insnIndex++;
         }
