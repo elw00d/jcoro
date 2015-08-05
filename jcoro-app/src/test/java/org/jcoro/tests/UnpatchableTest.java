@@ -4,6 +4,7 @@ import org.jcoro.Coro;
 import org.jcoro.ICoroRunnable;
 import org.jcoro.Instrument;
 import org.jcoro.RestorePoint;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -16,6 +17,7 @@ public class UnpatchableTest {
         new UnpatchableTest().test();
     }
 
+    @Ignore
     @Test
     public void test() {
         Coro coro = Coro.initSuspended(new ICoroRunnable() {

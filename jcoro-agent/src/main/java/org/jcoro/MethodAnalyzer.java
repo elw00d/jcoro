@@ -36,6 +36,7 @@ public class MethodAnalyzer extends MethodVisitor {
 
     private int restorePointCalls = 0;
     private Set<MethodId> restorePoints; // Set of found restore points
+    private Set<MethodId> unpatchableRestorePoints; // Set of restore points marked with unpatchable=true flag
 
     public MethodAnalyzer(int api, MethodVisitor mv, int access, String owner, String name, String desc, String signature,
                           String[] exceptions,
@@ -123,27 +124,31 @@ public class MethodAnalyzer extends MethodVisitor {
         return super.visitTypeAnnotation(typeRef, typePath, desc, visible);
     }
 
-    private boolean isRestorePoint(MethodId callingMethodId) {
-        if (declaredRestorePoints == null) return false;
+    private Optional<RestorePoint> findInRestorePoints(MethodId callingMethodId) {
+        if (declaredRestorePoints == null) return Optional.empty();
 
-        return declaredRestorePoints.stream().anyMatch(restorePoint -> {
+        return declaredRestorePoints.stream().filter(restorePoint -> {
             boolean ownerEquals = true; // todo : позволять уточнять имя класса/интерфейса
             boolean nameEquals = restorePoint.value().equals(callingMethodId.methodName);
             boolean descEquals = "".equals(restorePoint.desc())
                     || restorePoint.desc().equals(callingMethodId.signature);
             return ownerEquals && nameEquals && descEquals;
-        });
+        }).findFirst();
     }
 
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
         MethodId callingMethodId = new MethodId(owner, name, desc);
-        if (isRestorePoint(callingMethodId)) {
-            if (null == restorePoints) {
-                restorePoints = new HashSet<>();
-            }
+        final Optional<RestorePoint> restorePointOptional = findInRestorePoints(callingMethodId);
+        if (restorePointOptional.isPresent()) {
+            if (null == restorePoints) restorePoints = new HashSet<>();
             restorePoints.add(callingMethodId);
-
+            //
+            if (!restorePointOptional.get().patchable()) {
+                if (null == unpatchableRestorePoints) unpatchableRestorePoints = new HashSet<>();
+                unpatchableRestorePoints.add(callingMethodId);
+            }
+            //
             restorePointCalls++;
         }
         //
@@ -250,7 +255,7 @@ public class MethodAnalyzer extends MethodVisitor {
         }
         //
         resultMap.put(methodId, new MethodAnalyzeResult(
-                restorePointCalls, restorePoints, frames, insns)
+                restorePointCalls, restorePoints, unpatchableRestorePoints, frames, insns)
         );
         //
         super.visitEnd();

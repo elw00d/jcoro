@@ -10,14 +10,19 @@ import java.util.Set;
  */
 public class MethodAnalyzeResult {
     private final int restorePointCallsCount;
-    private final Set<MethodId> restorePoints;
+    private final Set<MethodId> restorePoints; // Can be null, if no restore points were found
+    private final Set<MethodId> unpatchableRestorePoints; // Can be null, if no unpatchable restore points were found
     private final Frame[] frames;
     private final AbstractInsnNode[] insns;
 
-    public MethodAnalyzeResult(int restorePointCallsCount, Set<MethodId> restorePoints,
-                               Frame[] frames, AbstractInsnNode[] insns) {
+    public MethodAnalyzeResult(int restorePointCallsCount,
+                               Set<MethodId> restorePoints,
+                               Set<MethodId> unpatchableRestorePoints,
+                               Frame[] frames,
+                               AbstractInsnNode[] insns) {
         this.restorePointCallsCount = restorePointCallsCount;
         this.restorePoints = restorePoints;
+        this.unpatchableRestorePoints = unpatchableRestorePoints;
         this.frames = frames;
         this.insns = insns;
     }
@@ -36,6 +41,14 @@ public class MethodAnalyzeResult {
      */
     public Set<MethodId> getRestorePoints() {
         return restorePoints;
+    }
+
+    /**
+     * Сигнатуры методов-точек восстановления, которые ведут в unpatchable код
+     * (код, который не будет инструментирован).
+     */
+    public Set<MethodId> getUnpatchableRestorePoints() {
+        return unpatchableRestorePoints;
     }
 
     /**

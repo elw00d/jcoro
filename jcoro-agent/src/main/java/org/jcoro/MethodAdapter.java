@@ -159,6 +159,23 @@ public class MethodAdapter extends MethodVisitor {
         Label noActiveStateLabel = new Label();
         mv.visitJumpInsn(Opcodes.IFNULL, noActiveStateLabel);
 
+        // Now, when state != null, we have to pop extra ref (saved "this") if current method is not static
+        // and if this method has been called from unpatchable code
+        if (!isStatic) {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "isUnpatchableCall", "()Z", false);
+            Label noUnpatchableFlag = new Label();
+            mv.visitJumpInsn(Opcodes.IFEQ, noUnpatchableFlag);
+
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
+            mv.visitInsn(Opcodes.POP);
+
+            mv.visitLabel(noUnpatchableFlag);
+            visitCurrentFrame("Ljava/lang/Integer;");
+        }
+        // Reset Coro.unpatchableCall flag to false always (when restoring state)
+        mv.visitLdcInsn(false);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "setUnpatchableCall", "(Z)V", false);
+
         // switch (state)
         final int nRestorePoints = analyzeResult.getRestorePointCallsCount();
         restoreLabels = new Label[nRestorePoints];
@@ -318,306 +335,319 @@ public class MethodAdapter extends MethodVisitor {
         }
     }
 
+    private void visitMethodInsnPatchable(int opcode, String owner, String name, String desc, boolean itf) {
+        // Первый блок, который должен быть исключён из всех try-catch блоков метода
+        // Блок обрамляет код восстановление контекста выполнения (последовательность pop-вызовов)
+        TryCatchExcludeBlock tryCatchSplitInfo_1 = new TryCatchExcludeBlock();
+        // Второй блок - обрамляет код сохранения контекста выполнения (последовательность push-вызовов)
+        TryCatchExcludeBlock tryCatchSplitInfo_2 = new TryCatchExcludeBlock();
+
+        Label noActiveCoroLabel = new Label();
+        tryCatchSplitInfo_1.label_2 = noActiveCoroLabel;
+        mv.visitJumpInsn(Opcodes.GOTO, noActiveCoroLabel);
+
+        // label_i:
+        mv.visitLabel(restoreLabels[restorePointsProcessed]);
+        tryCatchSplitInfo_1.label_1 = restoreLabels[restorePointsProcessed];
+
+        visitCurrentFrameWithoutStack();
+
+        // pop the stack and locals
+        {
+            Frame frame = currentFrame();
+            for (int i = frame.getLocals() - 1; i >= 0; i--) {
+                BasicValue local = (BasicValue) frame.getLocal(i);
+                if (local == BasicValue.UNINITIALIZED_VALUE) {
+                    // do nothing
+                } else if (local == BasicValue.RETURNADDRESS_VALUE) {
+                    // do nothing
+                } else if (local.isReference()) {
+                    final String typeDescriptor = local.getType().getDescriptor();
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
+                    mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
+                    mv.visitVarInsn(Opcodes.ASTORE, i);
+                } else {
+                    final int sort = local.getType().getSort();
+                    switch (sort) {
+                        case Type.VOID:
+                        case Type.OBJECT:
+                        case Type.ARRAY:
+                            // Should be already processed in if (isReference()) case
+                            throw new AssertionError("This shouldn't happen");
+                        case Type.INT:
+                        case Type.SHORT:
+                        case Type.BYTE:
+                        case Type.BOOLEAN:
+                        case Type.CHAR:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popInt", "()I", false);
+                            mv.visitVarInsn(Opcodes.ISTORE, i);
+                            break;
+                        case Type.LONG:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popLong", "()J", false);
+                            mv.visitVarInsn(Opcodes.LSTORE, i);
+                            break;
+                        case Type.DOUBLE:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popDouble", "()D", false);
+                            mv.visitVarInsn(Opcodes.DSTORE, i);
+                            break;
+                        case Type.FLOAT:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popFloat", "()F", false);
+                            mv.visitVarInsn(Opcodes.FSTORE, i);
+                            break;
+                        default:
+                            throw new AssertionError("This shouldn't happen");
+                    }
+                }
+            }
+            // Восстанавливаем дно стека
+            boolean callingMethodIsStatic = (opcode == Opcodes.INVOKESTATIC);
+            final Type callingMethodType = Type.getType(desc);
+            final Type[] argumentTypes = callingMethodType.getArgumentTypes();
+            int nArgs = argumentTypes.length;
+            int skipStackVars = nArgs + ((!callingMethodIsStatic) ? 1 : 0);
+            //
+            for (int i = frame.getStackSize() - 1; i >= skipStackVars; i--) {
+                BasicValue local = (BasicValue) frame.getStack(i);
+                if (local == BasicValue.UNINITIALIZED_VALUE) {
+                    // do nothing
+                } else if (local == BasicValue.RETURNADDRESS_VALUE) {
+                    // do nothing
+                } else if (local.isReference()) {
+                    final String typeDescriptor = local.getType().getDescriptor();
+                    if (!"Lnull;".equals(typeDescriptor)) {
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
+                        mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
+                    } else
+                        mv.visitInsn(Opcodes.ACONST_NULL);
+                } else {
+                    final int sort = local.getType().getSort();
+                    switch (sort) {
+                        case Type.VOID:
+                        case Type.OBJECT:
+                        case Type.ARRAY:
+                            // Should be already processed in if (isReference()) case
+                            throw new AssertionError("This shouldn't happen");
+                        case Type.INT:
+                        case Type.SHORT:
+                        case Type.BYTE:
+                        case Type.BOOLEAN:
+                        case Type.CHAR:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popInt", "()I", false);
+                            break;
+                        case Type.LONG:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popLong", "()J", false);
+                            break;
+                        case Type.DOUBLE:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popDouble", "()D", false);
+                            break;
+                        case Type.FLOAT:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popFloat", "()F", false);
+                            break;
+                        default:
+                            throw new AssertionError("This shouldn't happen");
+                    }
+                }
+            }
+            // Восстанавливаем instance для вызова, если метод - экземплярный
+            if (!callingMethodIsStatic) {
+                BasicValue value = (BasicValue) frame.getStack(frame.getStackSize() - 1 - nArgs);
+                if (!value.isReference()) throw new AssertionError("This shouldn't happen");
+
+                final String typeDescriptor = value.getType().getDescriptor();
+                if ("Lnull;".equals(typeDescriptor))
+                    throw new AssertionError("This shouldn't happen");
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
+                mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
+            }
+            // Передаём дефолтные значения для аргументов вызова
+            for (int i = 0; i < argumentTypes.length; i++) {
+                visitLdcDefaultValueForType(argumentTypes[i]);
+            }
+        }
+
+        // Сюда приходим сразу, если нет необходимости восстанавливать стек
+        mv.visitLabel(noActiveCoroLabel);
+        visitCurrentFrame(null);
+        super.visitMethodInsn(opcode, owner, name, desc, itf);
+
+        Label afterCallLabel = new Label();
+        mv.visitLabel(afterCallLabel);
+        tryCatchSplitInfo_2.label_1 = afterCallLabel;
+
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "isYielding", "()Z", false);
+        Label noSaveContextLabel = new Label();
+        tryCatchSplitInfo_2.label_2 = noSaveContextLabel;
+        mv.visitJumpInsn(Opcodes.IFEQ, noSaveContextLabel);
+
+        // Save the stack
+        {
+            Frame frame = nextFrame();
+            // Second, save stack
+            // Кроме возвращаемого значения вызванного метода - ведь он вернул нам null или 0 в случае
+            // после осуществления прерывания
+            final Type callingMethodReturnType = Type.getReturnType(desc);
+            boolean skipFirstStackItem = (callingMethodReturnType.getSort() != Type.VOID);
+            //
+            for (int i = skipFirstStackItem ? 1 : 0; i < frame.getStackSize(); i++) {
+                BasicValue local = (BasicValue) frame.getStack(i);
+                if (local == BasicValue.UNINITIALIZED_VALUE) {
+                    // do nothing
+                } else if (local == BasicValue.RETURNADDRESS_VALUE) {
+                    // do nothing
+                } else if (local.isReference()) {
+                    // Если здесь - null, то можно ничего не сохранять, а при восстановлении симметрично сделать ACONST_NULL
+                    final String typeDescriptor = local.getType().getDescriptor();
+                    if (!"Lnull;".equals(typeDescriptor))
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
+                } else {
+                    final int sort = local.getType().getSort();
+                    switch (sort) {
+                        case Type.VOID:
+                        case Type.OBJECT:
+                        case Type.ARRAY:
+                            // Should be already processed in if (isReference()) case
+                            throw new AssertionError("This shouldn't happen");
+                        case Type.INT:
+                        case Type.SHORT:
+                        case Type.BYTE:
+                        case Type.BOOLEAN:
+                        case Type.CHAR:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushInt", "(I)V", false);
+                            break;
+                        case Type.LONG:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushLong", "(J)V", false);
+                            break;
+                        case Type.DOUBLE:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushDouble", "(D)V", false);
+                            break;
+                        case Type.FLOAT:
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushFloat", "(F)V", false);
+                            break;
+                        default:
+                            throw new AssertionError("This shouldn't happen");
+                    }
+                }
+            }
+            // Thirst, save locals
+            for (int i = 0; i <frame.getLocals(); i++) {
+                BasicValue local = (BasicValue) frame.getLocal(i);
+                if (local == BasicValue.UNINITIALIZED_VALUE) {
+                    // do nothing
+                } else if (local == BasicValue.RETURNADDRESS_VALUE) {
+                    // do nothing
+                } else if (local.isReference()) {
+                    mv.visitVarInsn(Opcodes.ALOAD, i);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
+                } else {
+                    final int sort = local.getType().getSort();
+                    switch (sort) {
+                        case Type.VOID:
+                        case Type.OBJECT:
+                        case Type.ARRAY:
+                            // Should be already processed in if (isReference()) case
+                            throw new AssertionError("This shouldn't happen");
+                        case Type.INT:
+                        case Type.SHORT:
+                        case Type.BYTE:
+                        case Type.BOOLEAN:
+                        case Type.CHAR:
+                            mv.visitVarInsn(Opcodes.ILOAD, i);
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushInt", "(I)V", false);
+                            break;
+                        case Type.LONG:
+                            mv.visitVarInsn(Opcodes.LLOAD, i);
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushLong", "(J)V", false);
+                            break;
+                        case Type.DOUBLE:
+                            mv.visitVarInsn(Opcodes.DLOAD, i);
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushDouble", "(D)V", false);
+                            break;
+                        case Type.FLOAT:
+                            mv.visitVarInsn(Opcodes.FLOAD, i);
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushFloat", "(F)V", false);
+                            break;
+                        default:
+                            throw new AssertionError("This shouldn't happen");
+                    }
+                }
+            }
+            // Finally, save "this" if method is instance method and
+            if (!isStatic) {
+                assert frame.getLocals() >= 1; // At least one local ("this") should be present
+                mv.visitVarInsn(Opcodes.ALOAD, 0);
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
+            }
+
+            // Save the state
+            mv.visitLdcInsn(restorePointsProcessed);
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushState", "(I)V", false);
+
+            // And return
+            visitLdcDefaultValueForType(returnType); // Push default value for return type
+            //
+            final int type = returnType.getSort();
+            switch (type) {
+                case Type.VOID:
+                    mv.visitInsn(Opcodes.RETURN);
+                    break;
+                case Type.OBJECT:
+                case Type.ARRAY:
+                    mv.visitInsn(Opcodes.ARETURN);
+                    break;
+                // https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.9.2
+                case Type.INT:
+                case Type.SHORT:
+                case Type.BYTE:
+                case Type.BOOLEAN:
+                case Type.CHAR:
+                    mv.visitInsn(Opcodes.IRETURN);
+                    break;
+                case Type.LONG:
+                    mv.visitInsn(Opcodes.LRETURN);
+                    break;
+                case Type.DOUBLE:
+                    mv.visitInsn(Opcodes.DRETURN);
+                    break;
+                case Type.FLOAT:
+                    mv.visitInsn(Opcodes.FRETURN);
+                    break;
+                default:
+                    throw new AssertionError("This shouldn't happen");
+            }
+        }
+        mv.visitLabel(noSaveContextLabel);
+        visitNextFrame();
+
+        restorePointsProcessed++;
+
+        tryCatchExcludeBlocks.add(tryCatchSplitInfo_1);
+        tryCatchExcludeBlocks.add(tryCatchSplitInfo_2);
+    }
+
+    private void visitMethodInsnUnpatchable(int opcode, String owner, String name, String desc, boolean itf) {
+        System.out.println("");
+    }
+
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
         assert analyzeResult.getInsns()[insnIndex].getType() == AbstractInsnNode.METHOD_INSN;
-        try {
-            MethodId callingMethodId = new MethodId(owner, name, desc);
-            // Do nothing if this call is not restore point call
-            if (!analyzeResult.getRestorePoints().contains(callingMethodId)) {
-                super.visitMethodInsn(opcode, owner, name, desc, itf);
-                return;
-            }
 
-            // Первый блок, который должен быть исключён из всех try-catch блоков метода
-            // Блок обрамляет код восстановление контекста выполнения (последовательность pop-вызовов)
-            TryCatchExcludeBlock tryCatchSplitInfo_1 = new TryCatchExcludeBlock();
-            // Второй блок - обрамляет код сохранения контекста выполнения (последовательность push-вызовов)
-            TryCatchExcludeBlock tryCatchSplitInfo_2 = new TryCatchExcludeBlock();
-
-            Label noActiveCoroLabel = new Label();
-            tryCatchSplitInfo_1.label_2 = noActiveCoroLabel;
-            mv.visitJumpInsn(Opcodes.GOTO, noActiveCoroLabel);
-
-            // label_i:
-            mv.visitLabel(restoreLabels[restorePointsProcessed]);
-            tryCatchSplitInfo_1.label_1 = restoreLabels[restorePointsProcessed];
-
-            visitCurrentFrameWithoutStack();
-
-            // pop the stack and locals
-            {
-                Frame frame = currentFrame();
-                for (int i = frame.getLocals() - 1; i >= 0; i--) {
-                    BasicValue local = (BasicValue) frame.getLocal(i);
-                    if (local == BasicValue.UNINITIALIZED_VALUE) {
-                        // do nothing
-                    } else if (local == BasicValue.RETURNADDRESS_VALUE) {
-                        // do nothing
-                    } else if (local.isReference()) {
-                        final String typeDescriptor = local.getType().getDescriptor();
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
-                        mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
-                        mv.visitVarInsn(Opcodes.ASTORE, i);
-                    } else {
-                        final int sort = local.getType().getSort();
-                        switch (sort) {
-                            case Type.VOID:
-                            case Type.OBJECT:
-                            case Type.ARRAY:
-                                // Should be already processed in if (isReference()) case
-                                throw new AssertionError("This shouldn't happen");
-                            case Type.INT:
-                            case Type.SHORT:
-                            case Type.BYTE:
-                            case Type.BOOLEAN:
-                            case Type.CHAR:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popInt", "()I", false);
-                                mv.visitVarInsn(Opcodes.ISTORE, i);
-                                break;
-                            case Type.LONG:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popLong", "()J", false);
-                                mv.visitVarInsn(Opcodes.LSTORE, i);
-                                break;
-                            case Type.DOUBLE:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popDouble", "()D", false);
-                                mv.visitVarInsn(Opcodes.DSTORE, i);
-                                break;
-                            case Type.FLOAT:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popFloat", "()F", false);
-                                mv.visitVarInsn(Opcodes.FSTORE, i);
-                                break;
-                            default:
-                                throw new AssertionError("This shouldn't happen");
-                        }
-                    }
-                }
-                // Восстанавливаем дно стека
-                boolean callingMethodIsStatic = (opcode == Opcodes.INVOKESTATIC);
-                final Type callingMethodType = Type.getType(desc);
-                final Type[] argumentTypes = callingMethodType.getArgumentTypes();
-                int nArgs = argumentTypes.length;
-                int skipStackVars = nArgs + ((!callingMethodIsStatic) ? 1 : 0);
-                //
-                for (int i = frame.getStackSize() - 1; i >= skipStackVars; i--) {
-                    BasicValue local = (BasicValue) frame.getStack(i);
-                    if (local == BasicValue.UNINITIALIZED_VALUE) {
-                        // do nothing
-                    } else if (local == BasicValue.RETURNADDRESS_VALUE) {
-                        // do nothing
-                    } else if (local.isReference()) {
-                        final String typeDescriptor = local.getType().getDescriptor();
-                        if (!"Lnull;".equals(typeDescriptor)) {
-                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
-                            mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
-                        } else
-                            mv.visitInsn(Opcodes.ACONST_NULL);
-                    } else {
-                        final int sort = local.getType().getSort();
-                        switch (sort) {
-                            case Type.VOID:
-                            case Type.OBJECT:
-                            case Type.ARRAY:
-                                // Should be already processed in if (isReference()) case
-                                throw new AssertionError("This shouldn't happen");
-                            case Type.INT:
-                            case Type.SHORT:
-                            case Type.BYTE:
-                            case Type.BOOLEAN:
-                            case Type.CHAR:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popInt", "()I", false);
-                                break;
-                            case Type.LONG:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popLong", "()J", false);
-                                break;
-                            case Type.DOUBLE:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popDouble", "()D", false);
-                                break;
-                            case Type.FLOAT:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popFloat", "()F", false);
-                                break;
-                            default:
-                                throw new AssertionError("This shouldn't happen");
-                        }
-                    }
-                }
-                // Восстанавливаем instance для вызова, если метод - экземплярный
-                if (!callingMethodIsStatic) {
-                    BasicValue value = (BasicValue) frame.getStack(frame.getStackSize() - 1 - nArgs);
-                    if (!value.isReference()) throw new AssertionError("This shouldn't happen");
-
-                    final String typeDescriptor = value.getType().getDescriptor();
-                    if ("Lnull;".equals(typeDescriptor))
-                        throw new AssertionError("This shouldn't happen");
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "popRef", "()Ljava/lang/Object;", false);
-                    mv.visitTypeInsn(Opcodes.CHECKCAST, typeDescriptor);
-                }
-                // Передаём дефолтные значения для аргументов вызова
-                for (int i = 0; i < argumentTypes.length; i++) {
-                    visitLdcDefaultValueForType(argumentTypes[i]);
-                }
-            }
-
-            // Сюда приходим сразу, если нет необходимости восстанавливать стек
-            mv.visitLabel(noActiveCoroLabel);
-            visitCurrentFrame(null);
-            super.visitMethodInsn(opcode, owner, name, desc, itf);
-
-            Label afterCallLabel = new Label();
-            mv.visitLabel(afterCallLabel);
-            tryCatchSplitInfo_2.label_1 = afterCallLabel;
-
-            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "isYielding", "()Z", false);
-            Label noSaveContextLabel = new Label();
-            tryCatchSplitInfo_2.label_2 = noSaveContextLabel;
-            mv.visitJumpInsn(Opcodes.IFEQ, noSaveContextLabel);
-
-            // Save the stack
-            {
-                Frame frame = nextFrame();
-                // Second, save stack
-                // Кроме возвращаемого значения вызванного метода - ведь он вернул нам null или 0 в случае
-                // после осуществления прерывания
-                final Type callingMethodReturnType = Type.getReturnType(desc);
-                boolean skipFirstStackItem = (callingMethodReturnType.getSort() != Type.VOID);
-                //
-                for (int i = skipFirstStackItem ? 1 : 0; i < frame.getStackSize(); i++) {
-                    BasicValue local = (BasicValue) frame.getStack(i);
-                    if (local == BasicValue.UNINITIALIZED_VALUE) {
-                        // do nothing
-                    } else if (local == BasicValue.RETURNADDRESS_VALUE) {
-                        // do nothing
-                    } else if (local.isReference()) {
-                        // Если здесь - null, то можно ничего не сохранять, а при восстановлении симметрично сделать ACONST_NULL
-                        final String typeDescriptor = local.getType().getDescriptor();
-                        if (!"Lnull;".equals(typeDescriptor))
-                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
-                    } else {
-                        final int sort = local.getType().getSort();
-                        switch (sort) {
-                            case Type.VOID:
-                            case Type.OBJECT:
-                            case Type.ARRAY:
-                                // Should be already processed in if (isReference()) case
-                                throw new AssertionError("This shouldn't happen");
-                            case Type.INT:
-                            case Type.SHORT:
-                            case Type.BYTE:
-                            case Type.BOOLEAN:
-                            case Type.CHAR:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushInt", "(I)V", false);
-                                break;
-                            case Type.LONG:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushLong", "(J)V", false);
-                                break;
-                            case Type.DOUBLE:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushDouble", "(D)V", false);
-                                break;
-                            case Type.FLOAT:
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushFloat", "(F)V", false);
-                                break;
-                            default:
-                                throw new AssertionError("This shouldn't happen");
-                        }
-                    }
-                }
-                // Thirst, save locals
-                for (int i = 0; i <frame.getLocals(); i++) {
-                    BasicValue local = (BasicValue) frame.getLocal(i);
-                    if (local == BasicValue.UNINITIALIZED_VALUE) {
-                        // do nothing
-                    } else if (local == BasicValue.RETURNADDRESS_VALUE) {
-                        // do nothing
-                    } else if (local.isReference()) {
-                        mv.visitVarInsn(Opcodes.ALOAD, i);
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
-                    } else {
-                        final int sort = local.getType().getSort();
-                        switch (sort) {
-                            case Type.VOID:
-                            case Type.OBJECT:
-                            case Type.ARRAY:
-                                // Should be already processed in if (isReference()) case
-                                throw new AssertionError("This shouldn't happen");
-                            case Type.INT:
-                            case Type.SHORT:
-                            case Type.BYTE:
-                            case Type.BOOLEAN:
-                            case Type.CHAR:
-                                mv.visitVarInsn(Opcodes.ILOAD, i);
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushInt", "(I)V", false);
-                                break;
-                            case Type.LONG:
-                                mv.visitVarInsn(Opcodes.LLOAD, i);
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushLong", "(J)V", false);
-                                break;
-                            case Type.DOUBLE:
-                                mv.visitVarInsn(Opcodes.DLOAD, i);
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushDouble", "(D)V", false);
-                                break;
-                            case Type.FLOAT:
-                                mv.visitVarInsn(Opcodes.FLOAD, i);
-                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushFloat", "(F)V", false);
-                                break;
-                            default:
-                                throw new AssertionError("This shouldn't happen");
-                        }
-                    }
-                }
-                // Finally, save "this" if method is instance method and
-                if (!isStatic) {
-                    assert frame.getLocals() >= 1; // At least one local ("this") should be present
-                    mv.visitVarInsn(Opcodes.ALOAD, 0);
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
-                }
-
-                // Save the state
-                mv.visitLdcInsn(restorePointsProcessed);
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushState", "(I)V", false);
-
-                // And return
-                visitLdcDefaultValueForType(returnType); // Push default value for return type
-                //
-                final int type = returnType.getSort();
-                switch (type) {
-                    case Type.VOID:
-                        mv.visitInsn(Opcodes.RETURN);
-                        break;
-                    case Type.OBJECT:
-                    case Type.ARRAY:
-                        mv.visitInsn(Opcodes.ARETURN);
-                        break;
-                    // https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.9.2
-                    case Type.INT:
-                    case Type.SHORT:
-                    case Type.BYTE:
-                    case Type.BOOLEAN:
-                    case Type.CHAR:
-                        mv.visitInsn(Opcodes.IRETURN);
-                        break;
-                    case Type.LONG:
-                        mv.visitInsn(Opcodes.LRETURN);
-                        break;
-                    case Type.DOUBLE:
-                        mv.visitInsn(Opcodes.DRETURN);
-                        break;
-                    case Type.FLOAT:
-                        mv.visitInsn(Opcodes.FRETURN);
-                        break;
-                    default:
-                        throw new AssertionError("This shouldn't happen");
-                }
-            }
-            mv.visitLabel(noSaveContextLabel);
-            visitNextFrame();
-
-            restorePointsProcessed++;
-
-            tryCatchExcludeBlocks.add(tryCatchSplitInfo_1);
-            tryCatchExcludeBlocks.add(tryCatchSplitInfo_2);
-        } finally {
+        MethodId callingMethodId = new MethodId(owner, name, desc);
+        // Do nothing if this call is not restore point call
+        if (!analyzeResult.getRestorePoints().contains(callingMethodId)) {
+            mv.visitMethodInsn(opcode, owner, name, desc, itf);
             insnIndex++;
+            return;
         }
+
+        if (analyzeResult.getUnpatchableRestorePoints() != null &&
+                analyzeResult.getUnpatchableRestorePoints().contains(callingMethodId)) {
+            visitMethodInsnUnpatchable(opcode, owner, name, desc, itf);
+        } else {
+            visitMethodInsnPatchable(opcode, owner, name, desc, itf);
+        }
+
+        insnIndex++;
     }
 
     @Override

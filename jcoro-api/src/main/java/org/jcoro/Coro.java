@@ -210,6 +210,108 @@ public class Coro implements AutoCloseable {
         return coro != null && coro.isYielding;
     }
 
+    // Stuff for support of storing args of methods before calling
+    // (if dealing with unpatchable methods)
+    // Здесь довольно много не очень хорошо поименованных методов, это следствие того, что
+    // объектики при вызове unpatchable метода нужно неоднократно перекладывать между стеками
+
+    /**
+     * Флаг, устанавливается в true при вызове unpatchable метода при восстановлении контекста выполнения
+     * (чтобы первый вызванный unpatchable-кодом инструментированный метод скорректировал refsStack, убрав
+     * лишний this со стека (если он не статический), после этого сбросив флаг обратно в false). Если же первый
+     * инструментированный метод - статический, то флаг просто должен быть сброшен в false.
+     */
+    private boolean unpatchableCall;
+
+    public static boolean isUnpatchableCall() {
+        return getUnsafe().unpatchableCall;
+    }
+
+    public static void setUnpatchableCall(boolean unpatchableCall) {
+        getUnsafe().unpatchableCall = unpatchableCall;
+    }
+
+    private static class UnpatchableMethodArgsStore {
+        public Stack<Object> refsStack = new Stack<>();
+        public Stack<Integer> intsStack = new Stack<>();
+        public Stack<Long> longsStack = new Stack<>();
+        public Stack<Float> floatsStack = new Stack<>();
+        public Stack<Double> doublesStack = new Stack<>();
+    }
+
+    private UnpatchableMethodArgsStore unpatchableStore;
+
+    private UnpatchableMethodArgsStore getUnpatchableStore() {
+        if (null == unpatchableStore)
+            unpatchableStore = new UnpatchableMethodArgsStore();
+        return unpatchableStore;
+    }
+
+    public static void pushRefToUnpatchable(Object ref) {
+        getUnsafe().getUnpatchableStore().refsStack.push(ref);
+    }
+
+    public static void pushIntToUnpatchable(int i) {
+        getUnsafe().getUnpatchableStore().intsStack.push(i);
+    }
+
+    public static void pushLongToUnpatchable(long l) {
+        getUnsafe().getUnpatchableStore().longsStack.push(l);
+    }
+
+    public static void pushFloatToUnpatchable(float f) {
+        getUnsafe().getUnpatchableStore().floatsStack.push(f);
+    }
+
+    public static void pushDoubleToUnpatchable(double d) {
+        getUnsafe().getUnpatchableStore().doublesStack.push(d);
+    }
+
+    public static Object popRefFromUnpatchable() {
+        return getUnsafe().getUnpatchableStore().refsStack.pop();
+    }
+
+    public static int popIntFromUnpatchable() {
+        return getUnsafe().getUnpatchableStore().intsStack.pop();
+    }
+
+    public static long popLongFromUnpatchable() {
+        return getUnsafe().getUnpatchableStore().longsStack.pop();
+    }
+
+    public static float popFloatFromUnpatchable() {
+        return getUnsafe().getUnpatchableStore().floatsStack.pop();
+    }
+
+    public static double popDoubleFromUnpatchable() {
+        return getUnsafe().getUnpatchableStore().doublesStack.pop();
+    }
+
+    public static Object peekRefFromUnpatchable(int skip) {
+        final Stack<Object> stack = getUnsafe().getUnpatchableStore().refsStack;
+        return stack.get(stack.size() - 1 - skip);
+    }
+
+    public static int peekIntFromUnpatchable(int skip) {
+        final Stack<Integer> stack = getUnsafe().getUnpatchableStore().intsStack;
+        return stack.get(stack.size() - 1 - skip);
+    }
+
+    public static long peekLongFromUnpatchable(int skip) {
+        final Stack<Long> stack = getUnsafe().getUnpatchableStore().longsStack;
+        return stack.get(stack.size() - 1 - skip);
+    }
+
+    public static float peekFloatFromUnpatchable(int skip) {
+        final Stack<Float> stack = getUnsafe().getUnpatchableStore().floatsStack;
+        return stack.get(stack.size() - 1 - skip);
+    }
+
+    public static double peekDoubleFromUnpatchable(int skip) {
+        final Stack<Double> stack = getUnsafe().getUnpatchableStore().doublesStack;
+        return stack.get(stack.size() - 1 - skip);
+    }
+
     public void close() throws Exception {
     }
 }
