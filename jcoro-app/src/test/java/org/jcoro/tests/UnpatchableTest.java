@@ -4,7 +4,6 @@ import org.jcoro.Coro;
 import org.jcoro.ICoroRunnable;
 import org.jcoro.Instrument;
 import org.jcoro.RestorePoint;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -17,13 +16,16 @@ public class UnpatchableTest {
         new UnpatchableTest().test();
     }
 
-    @Ignore
     @Test
     public void test() {
         Coro coro = Coro.initSuspended(new ICoroRunnable() {
             @Instrument(@RestorePoint(value = "unpatchableMethod", patchable = false))
             public void run() {
-                unpatchableMethod(10);
+                try {
+                    unpatchableMethod(10);
+                } catch (IllegalArgumentException e) {
+                    System.out.println("Successfully catched exception: " + e.getMessage());
+                }
             }
 
             public void unpatchableMethod(int i) {
@@ -32,11 +34,25 @@ public class UnpatchableTest {
                 System.out.println(String.format("unpatchableMethod(%d) end", i));
             }
 
-            @Instrument(@RestorePoint("yield"))
+            @Instrument(@RestorePoint(value = "unpatchableMethod2", patchable = false))
             public void patchableMethod(int i) {
-                System.out.println("Before yield, i = " + i);
+                System.out.println("patchableMethod(" + i + ")");
+                unpatchableMethod2(5, "string");
+                System.out.println("patchableMethod(" + i + ") end");
+                throw new IllegalArgumentException("SomeException");
+            }
+
+            public void unpatchableMethod2(int a, String b) {
+                System.out.println(String.format("unpatchableMethod2(%d, %s)", a, b));
+                patchableMethod2(a, b);
+                System.out.println(String.format("unpatchableMethod2(%d, %s) end", a, b));
+            }
+
+            @Instrument(@RestorePoint("yield"))
+            public void patchableMethod2(int a, String b) {
+                System.out.println(String.format("patchableMethod(%d, %s): before yield", a, b));
                 Coro.get().yield();
-                System.out.println("After yield, i = " + i);
+                System.out.println(String.format("patchableMethod(%d, %s): after yield", a, b));
             }
         });
         coro.start();

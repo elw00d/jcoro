@@ -312,6 +312,19 @@ public class Coro implements AutoCloseable {
         return stack.get(stack.size() - 1 - skip);
     }
 
+    /**
+     * Убирает с верхушки стека unpatchables сразу все аргументы фрейма. Нужно передать, сколько
+     * объектов какого типа было сохранено.
+     */
+    public static void cleanupUnpatchableFrame(int refs, int ints, int longs, int floats, int doubles) {
+        final UnpatchableMethodArgsStore store = getUnsafe().getUnpatchableStore();
+        for (int i = 0; i < refs; i++) store.refsStack.pop();
+        for (int i = 0; i < ints; i++) store.intsStack.pop();
+        for (int i = 0; i < longs; i++) store.longsStack.pop();
+        for (int i = 0; i < floats; i++) store.floatsStack.pop();
+        for (int i = 0; i < doubles; i++) store.doublesStack.pop();
+    }
+
     public void close() throws Exception {
     }
 }
