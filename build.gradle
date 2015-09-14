@@ -1,47 +1,10 @@
-//allprojects {
-//
-//    apply plugin: 'idea'
-//
-//    idea {
-//        module {
-//            // if you hate browsing Javadoc
-//            downloadJavadoc = false
-//
-//            // and love reading sources :)
-//            downloadSources = true
-//        }
-//    }
-//
-//    repositories {
-//        mavenLocal()
-//        mavenCentral()
-//    }
-//}
-
-project(':jcoro-analyzer') {
-    apply plugin: 'java'
-
-    sourceCompatibility = 1.8
-    targetCompatibility = 1.8
-    version = '1.0'
-
-    repositories {
-	mavenCentral()
-    }
-
-    dependencies {
-	compile project(":jcoro-api")
-        compile 'org.ow2.asm:asm:5.0.4'
-        testCompile group: 'junit', name: 'junit', version: '4.11'
-    }
-}
-
 project(':jcoro-api') {
     apply plugin: 'java'
 
     sourceCompatibility = 1.8
     targetCompatibility = 1.8
     version = '1.0'
+    compileJava.options.encoding = 'UTF-8'
 
     repositories {
         mavenCentral()
@@ -113,8 +76,7 @@ project(':jcoro-app') {
         jvmArgs = ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]
         args = ["--source", test.testClassesDir, "--dest", "./build/classes/testInstrumented"]
 
-        // todo : instrument all classes in ./build/classes/test
-        logger.lifecycle("Test classes:::: " + test.testClassesDir)
+//        logger.lifecycle("Test classes: " + test.testClassesDir)
     }
 
     sourceSets {
@@ -128,15 +90,15 @@ project(':jcoro-app') {
     test {
         testClassesDir = new File("./build/classes/testInstrumented")
 
-        beforeSuite {
-            logger.lifecycle("Test classes dir:" + test.testClassesDir)
-            for (def classpathItem : test.classpath)
-                logger.lifecycle("Classpath item: " + classpathItem)
-        }
+//        beforeSuite {
+//            logger.lifecycle("Test classes dir:" + test.testClassesDir)
+//            for (def classpathItem : test.classpath)
+//                logger.lifecycle("Classpath item: " + classpathItem)
+//        }
 
-        beforeTest { descriptor ->
-            logger.lifecycle("Running test: " + descriptor)
-        }
+//        beforeTest { descriptor ->
+//            logger.lifecycle("Running test: " + descriptor)
+//        }
     }
 
     jar {

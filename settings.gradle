@@ -1,4 +1,3 @@
 include("jcoro-api")
 include("jcoro-agent")
 include("jcoro-app")
-include("jcoro-analyzer")

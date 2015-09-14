@@ -6,7 +6,6 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
-import java.nio.file.OpenOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,7 +22,7 @@ public class Program {
      * --source src --dest dst
      */
     public static void main(String[] args) {
-        System.out.println("!!! program started !!!");
+        System.out.println("Instrumenting program started");
 
         if (args.length != 4 || !args[0].equals("--source") || !args[2].equals("--dest")) {
             System.out.println("Usage: program --source <src> --dest <dst>");
@@ -80,39 +79,38 @@ public class Program {
             }
             InstrumentProgram instrumentProgram = new InstrumentProgram();
             final TransformResult transformResult = instrumentProgram.transform(bytes);
-            //if (transformResult.wasModified()) {
-                final String[] parts = transformResult.getClassName().split("/");
-                final String onlyName = parts[parts.length - 1];
 
-                // Create all directories for package
-                File dir = new File(destDirPath);
-                for (int i = 0; i < parts.length - 1; i++) {
-                    String subdirName = parts[i];
-                    File subdir = new File(dir, subdirName);
-                    if (!subdir.exists()) {
-                        if (!subdir.mkdir()) throw new RuntimeException("Cannot create directory: " + subdir.getPath());
-                    }
-                    dir = subdir;
-                }
+            final String[] parts = transformResult.getClassName().split("/");
+            final String onlyName = parts[parts.length - 1];
 
-                // Create class file
-                File transformedClassFile = new File(dir, onlyName + ".class");
-                if (transformedClassFile.exists()) {
-                    if (!transformedClassFile.delete()) throw new RuntimeException("Cannot delete file: " + transformedClassFile.getPath());
+            // Create all directories for package
+            File dir = new File(destDirPath);
+            for (int i = 0; i < parts.length - 1; i++) {
+                String subdirName = parts[i];
+                File subdir = new File(dir, subdirName);
+                if (!subdir.exists()) {
+                    if (!subdir.mkdir()) throw new RuntimeException("Cannot create directory: " + subdir.getPath());
                 }
-                try {
-                    if (!transformedClassFile.createNewFile())
-                        throw new RuntimeException("Cannot create new file: " + transformedClassFile.getPath());
-                } catch (IOException e) {
-                    throw new RuntimeException("Cannot create new file: " + transformedClassFile.getPath(), e);
-                }
+                dir = subdir;
+            }
 
-                try {
-                    Files.write(transformedClassFile.toPath(), transformResult.getData(), StandardOpenOption.WRITE);
-                } catch (IOException e) {
-                    throw new RuntimeException("Cannot write to file: " + transformedClassFile.getPath(), e);
-                }
-            //}
+            // Create class file
+            File transformedClassFile = new File(dir, onlyName + ".class");
+            if (transformedClassFile.exists()) {
+                if (!transformedClassFile.delete()) throw new RuntimeException("Cannot delete file: " + transformedClassFile.getPath());
+            }
+            try {
+                if (!transformedClassFile.createNewFile())
+                    throw new RuntimeException("Cannot create new file: " + transformedClassFile.getPath());
+            } catch (IOException e) {
+                throw new RuntimeException("Cannot create new file: " + transformedClassFile.getPath(), e);
+            }
+
+            try {
+                Files.write(transformedClassFile.toPath(), transformResult.getData(), StandardOpenOption.WRITE);
+            } catch (IOException e) {
+                throw new RuntimeException("Cannot write to file: " + transformedClassFile.getPath(), e);
+            }
         }
 
     }
