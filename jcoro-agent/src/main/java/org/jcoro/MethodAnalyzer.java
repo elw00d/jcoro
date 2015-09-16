@@ -22,12 +22,11 @@ import static java.util.stream.Collectors.toList;
  * @author elwood
  */
 public class MethodAnalyzer extends MethodVisitor {
-    private final MethodVisitor nextMv; // todo: попробовать позвать след визитор в конце visitEnd()
     private final MethodNode mn;
     private final String owner;
     private final MethodId methodId;
 
-    private final byte[] classFile;
+    private final ClassLoader classLoader;
 
     private List<Await> declaredRestorePoints;
 
@@ -38,16 +37,15 @@ public class MethodAnalyzer extends MethodVisitor {
     private Set<MethodId> restorePoints; // Set of found restore points
     private Set<MethodId> unpatchableRestorePoints; // Set of restore points marked with unpatchable=true flag
 
-    public MethodAnalyzer(int api, MethodVisitor mv, int access, String owner, String name, String desc, String signature,
+    public MethodAnalyzer(int api, int access, String owner, String name, String desc, String signature,
                           String[] exceptions,
                           Map<MethodId, MethodAnalyzeResult> resultMap,
-                          byte[] classFile) {
+                          ClassLoader classLoader) {
         super(api, new MethodNode(Opcodes.ASM5, access, name, desc, signature, exceptions));
         //
-        this.nextMv = mv;
         this.mn = (MethodNode) super.mv;
         this.owner = owner;
-        this.classFile = classFile;
+        this.classLoader = classLoader;
         //
         this.methodId = new MethodId(owner, name, desc);
         // output
@@ -200,7 +198,7 @@ public class MethodAnalyzer extends MethodVisitor {
                     try {
                         // Используем класслоадер, который умеет загружать исходный класс из массива байт
                         // Это нужно для работы верификатора
-                        return InstrumentProgram.classLoader.loadClass(t.getInternalName().replaceAll("/", "."));
+                        return classLoader.loadClass(t.getInternalName().replaceAll("/", "."));
                     } catch (ClassNotFoundException e1) {
                         throw new RuntimeException(e1);
                     }

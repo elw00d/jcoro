@@ -1,5 +1,7 @@
 package org.jcoro;
 
+import org.objectweb.asm.*;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -8,12 +10,16 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author elwood
  */
 public class Program {
+    private static URLClassLoader classLoader;
+
     private static String sourceDirPath;
     private static String destDirPath;
 
@@ -33,7 +39,7 @@ public class Program {
         destDirPath = args[3];
 
         prepareEnv();
-        instrumentClasses();
+        new Program().instrumentClasses();
     }
 
     /**
@@ -55,14 +61,14 @@ public class Program {
         }
     }
 
-    private static void instrumentClasses() {
+    private void instrumentClasses() {
         File sourceDir = new File(sourceDirPath);
         List<File> allClassFiles = new ArrayList<>();
         collectClassFilesRecursively(allClassFiles, sourceDir);
 
         // Initialize classloader
         try {
-            InstrumentProgram.classLoader = new URLClassLoader(
+            classLoader = new URLClassLoader(
                     new URL[]{sourceDir.toURI().toURL()},
                     Thread.currentThread().getContextClassLoader()
             );
@@ -77,8 +83,7 @@ public class Program {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-            InstrumentProgram instrumentProgram = new InstrumentProgram();
-            final TransformResult transformResult = instrumentProgram.transform(bytes);
+            final TransformResult transformResult = transform(bytes);
 
             final String[] parts = transformResult.getClassName().split("/");
             final String onlyName = parts[parts.length - 1];
@@ -113,6 +118,84 @@ public class Program {
             }
         }
 
+    }
+
+    private String className;
+    private boolean wasModified; // Были ли на самом деле изменения в классе
+
+    public TransformResult transform(byte[] bytes) {
+        className = null;
+        wasModified = false;
+
+        Map<MethodId, MethodAnalyzeResult> analyzeResults = new HashMap<>();
+
+        // Сначала посчитаем для каждого метода кол-во точек восстановления внутри него
+        // Это необходимо для генерации кода switch в начале метода
+        ClassReader countingReader = new ClassReader(bytes);
+        countingReader.accept(new ClassVisitor(Opcodes.ASM5) {
+            @Override
+            public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+                // Сохраняем имя класса в field, а также определяем, реализует ли этот класс ICoroRunnable
+                className = name;
+                super.visit(version, access, name, signature, superName, interfaces);
+            }
+
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
+                return new MethodAnalyzer(Opcodes.ASM5, access, className, name, desc,
+                        signature, exceptions, analyzeResults, classLoader);
+            }
+        }, 0);
+
+        ClassReader reader = new ClassReader(bytes);
+        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS /*| ClassWriter.COMPUTE_FRAMES*/) {
+            @Override
+            protected String getCommonSuperClass(String type1, String type2) {
+                try {
+                    return super.getCommonSuperClass(type1, type2);
+                } catch (RuntimeException e) {
+                    // todo : убедиться в том, что всегда возвращать Object здесь - безопасно
+                    return "java/lang/Object";
+                }
+            }
+        };
+        ClassVisitor adapter = new ClassVisitor(Opcodes.ASM5, writer) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
+                MethodId methodId = new MethodId(className, name, desc);
+
+                // Если метод не нужно инструментировать, ничего и не делаем
+                boolean needInstrument = analyzeResults.containsKey(methodId);
+                if (!needInstrument)
+                    return super.visitMethod(access, name, desc, signature, exceptions);
+
+                MethodAnalyzeResult analyzeResult = analyzeResults.get(methodId);
+
+                // Если внутри метода нет ни одной точки восстановления - также можем не инструментировать его
+                if (analyzeResult.getRestorePointCallsCount() == 0)
+                    return super.visitMethod(access, name, desc, signature, exceptions);
+
+                wasModified = true;
+
+                return new MethodAdapter(Opcodes.ASM5, super.visitMethod(access, name, desc, signature, exceptions),
+                        analyzeResult,
+                        (access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC,
+                        Type.getType(desc).getReturnType());
+            }
+        };
+        try {
+            reader.accept(adapter, 0);
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.exit(-1);
+        }
+
+        if (wasModified) {
+            byte[] transformed = writer.toByteArray();
+            return new TransformResult(true, className, transformed);
+        } else {
+            return new TransformResult(false, className, bytes);
+        }
     }
 
     private static void collectClassFilesRecursively(List<File> allClassFiles,

@@ -5,7 +5,7 @@ package org.jcoro;
  */
 public class MethodId {
     public final String className;
-    public final String methodName; // mangled ?
+    public final String methodName;
     public final String signature;
 
     public MethodId(String className, String methodName, String signature) {
