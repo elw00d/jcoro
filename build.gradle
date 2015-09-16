@@ -61,22 +61,30 @@ project(':jcoro-app') {
 
     task instrumentClasses(type: JavaExec) {
         main = "org.jcoro.Program"
-        classpath = files("../jcoro-api/build/libs/jcoro-api-1.0.jar",
-                "../jcoro-agent/build/libs/jcoro-agent-1.0.jar",
-                "../lib/asm-all-5.0.4.jar")
+        //
+        Collection<File> asmDependencies = project.configurations.compile.findAll { it.name.startsWith("asm") }
+        List<String> paths = new ArrayList<String>()
+        for (File f : asmDependencies) { paths.add(f.absolutePath) }
+        paths.add("../jcoro-api/build/libs/jcoro-api-1.0.jar")
+        paths.add("../jcoro-agent/build/libs/jcoro-agent-1.0.jar")
+        classpath = files(paths)
+        //
         jvmArgs = ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]
         args = ["--source", compileJava.destinationDir, "--dest", "./build/classes/instrumented"]
     }
 
     task instrumentTestClasses(type: JavaExec) {
         main = "org.jcoro.Program"
-        classpath = files("../jcoro-api/build/libs/jcoro-api-1.0.jar",
-                "../jcoro-agent/build/libs/jcoro-agent-1.0.jar",
-                "../lib/asm-all-5.0.4.jar")
+        //
+        Collection<File> asmDependencies = project.configurations.compile.findAll { it.name.startsWith("asm") }
+        List<String> paths = new ArrayList<String>()
+        for (File f : asmDependencies) { paths.add(f.absolutePath) }
+        paths.add("../jcoro-api/build/libs/jcoro-api-1.0.jar")
+        paths.add("../jcoro-agent/build/libs/jcoro-agent-1.0.jar")
+        classpath = files(paths)
+        //
         jvmArgs = ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]
         args = ["--source", test.testClassesDir, "--dest", "./build/classes/testInstrumented"]
-
-//        logger.lifecycle("Test classes: " + test.testClassesDir)
     }
 
     sourceSets {
@@ -113,14 +121,3 @@ project(':jcoro-app') {
     test.dependsOn instrumentTestClasses
     instrumentTestClasses.dependsOn testClasses
 }
-
-task runWithAgent(type: JavaExec) {
-    main = "org.jcoro.tests.simpletest2.TestCoro"
-    classpath = files("jcoro-api/build/libs/jcoro-api-1.0.jar",
-        "jcoro-app/build/libs/jcoro-app-1.0.jar",
-        "lib/asm-all-5.0.4.jar")
-    jvmArgs = ["-javaagent:jcoro-agent/build/libs/jcoro-agent-1.0.jar",
-        "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005"]
-}
-
-runWithAgent.dependsOn ":jcoro-agent:build", ":jcoro-app:build"
