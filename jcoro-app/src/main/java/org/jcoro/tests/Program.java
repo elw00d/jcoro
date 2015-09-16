@@ -2,8 +2,8 @@ package org.jcoro.tests;
 
 import org.jcoro.Coro;
 import org.jcoro.ICoroRunnable;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
+import org.jcoro.Async;
+import org.jcoro.Await;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousFileChannel;
@@ -17,7 +17,7 @@ public class Program {
         Coro outerCoro = Coro.initSuspended(() -> {
             Coro _outerCoro = Coro.get();
 
-            Coro innerCoro = Coro.initSuspended((@Instrument(@RestorePoint("yield")) ICoroRunnable) () -> {
+            Coro innerCoro = Coro.initSuspended((@Async(@Await("yield")) ICoroRunnable) () -> {
                 Coro _innerCoro = Coro.get();
                 int i = 5;
                 System.out.println("i = " + i);

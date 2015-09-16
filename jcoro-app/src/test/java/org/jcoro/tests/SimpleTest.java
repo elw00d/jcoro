@@ -1,9 +1,9 @@
 package org.jcoro.tests;
 
+import org.jcoro.Async;
+import org.jcoro.Await;
 import org.jcoro.Coro;
 import org.jcoro.ICoroRunnable;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -16,7 +16,7 @@ public class SimpleTest {
     }
 
     @Test
-    @Instrument({@RestorePoint("assertTrue")})
+    @Async({@Await("assertTrue")})
     public void test() {
         Assert.assertTrue(true);
     }
@@ -28,7 +28,7 @@ public class SimpleTest {
         array[1] = 0;
         Coro coro = Coro.initSuspended(new ICoroRunnable() {
             @Override
-            @Instrument({@RestorePoint(value = "foo")})
+            @Async({@Await(value = "foo")})
             public void run() {
                 int i = 5;
                 double f = 10;
@@ -39,7 +39,7 @@ public class SimpleTest {
                 System.out.println("coro: func end, i: " + i + ", str: " + argStr);
             }
 
-            @Instrument(@RestorePoint("yield"))
+            @Async(@Await("yield"))
             private String foo(int x, double y, String m) {
                 Assert.assertTrue(x == 5);
                 Assert.assertTrue(y == 10);

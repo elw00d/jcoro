@@ -1,10 +1,10 @@
 package org.jcoro.tests;
 
 import junit.framework.Assert;
+import org.jcoro.Async;
+import org.jcoro.Await;
 import org.jcoro.Coro;
 import org.jcoro.ICoroRunnable;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
 import org.junit.Test;
 
 /**
@@ -21,7 +21,7 @@ public class RecursiveCoroTest {
         final Coro coro = Coro.initSuspended(new ICoroRunnable() {
             private int i = 0;
 
-            @Instrument({@RestorePoint("yield"), @RestorePoint("run")})
+            @Async({@Await("yield"), @Await("run")})
             public void run() {
                 final int _i = i;
                 if (i != 1) {

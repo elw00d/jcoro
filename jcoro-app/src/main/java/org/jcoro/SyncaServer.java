@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class SyncaServer {
     static AtomicInteger openChannels = new AtomicInteger();
 
-    @Instrument({@RestorePoint("yield")})
+    @Async({@Await("yield")})
     public static AsynchronousSocketChannel accept(AsynchronousServerSocketChannel listener) {
         Coro coro = Coro.get();
         final AsynchronousSocketChannel[] res = new AsynchronousSocketChannel[1];
@@ -46,7 +46,7 @@ public class SyncaServer {
     public static void main(String[] args) throws IOException, InterruptedException {
         Coro coro = Coro.initSuspended(new ICoroRunnable() {
             @Override
-            @Instrument({@RestorePoint("accept")})
+            @Async({@Await("accept")})
             public void run() {
                 try {
                     ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
@@ -62,7 +62,7 @@ public class SyncaServer {
                                 try {
                                     Coro handleCoro = Coro.initSuspended(new ICoroRunnable() {
                                         @Override
-                                        @Instrument({@RestorePoint("handle")})
+                                        @Async({@Await("handle")})
                                         public void run() {
                                             try {
                                                 handle(channel);
@@ -88,7 +88,7 @@ public class SyncaServer {
         Thread.sleep(60000);
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static Integer read(AsynchronousSocketChannel channel,
                                ByteBuffer buffer) {
         Coro coro = Coro.get();
@@ -114,7 +114,7 @@ public class SyncaServer {
         return res[0];
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     private static Integer write(AsynchronousSocketChannel channel,
                                  ByteBuffer buffer) {
         Coro coro = Coro.get();
@@ -142,7 +142,7 @@ public class SyncaServer {
 
     static ByteBuffer outBuffer = ByteBuffer.wrap("200 OK".getBytes(Charset.forName("utf-8")));
 
-    @Instrument({@RestorePoint("read"), @RestorePoint("write")})
+    @Async({@Await("read"), @Await("write")})
     public static void handle(AsynchronousSocketChannel channel) {
 //        System.out.println("Starting handling " + channel);
         ByteBuffer buffer = ByteBuffer.allocate(10 * 1024);

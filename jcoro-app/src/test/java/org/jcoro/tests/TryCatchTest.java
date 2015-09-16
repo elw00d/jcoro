@@ -1,9 +1,9 @@
 package org.jcoro.tests;
 
+import org.jcoro.Await;
 import org.jcoro.Coro;
 import org.jcoro.ICoroRunnable;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
+import org.jcoro.Async;
 import org.junit.Test;
 
 /**
@@ -20,7 +20,7 @@ public class TryCatchTest {
     public void testCatch() {
         final Coro coro = Coro.initSuspended(new ICoroRunnable() {
             @Override
-            @Instrument(@RestorePoint("yield"))
+            @Async(@Await("yield"))
             public void run() {
                 Coro coro = Coro.get();
                 try {

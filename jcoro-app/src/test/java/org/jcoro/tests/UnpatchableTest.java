@@ -1,9 +1,9 @@
 package org.jcoro.tests;
 
+import org.jcoro.Async;
 import org.jcoro.Coro;
 import org.jcoro.ICoroRunnable;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
+import org.jcoro.Await;
 import org.junit.Test;
 
 /**
@@ -19,7 +19,7 @@ public class UnpatchableTest {
     @Test
     public void test() {
         Coro coro = Coro.initSuspended(new ICoroRunnable() {
-            @Instrument(@RestorePoint(value = "unpatchableMethod", patchable = false))
+            @Async(@Await(value = "unpatchableMethod", patchable = false))
             public void run() {
                 try {
                     unpatchableMethod(10);
@@ -34,7 +34,7 @@ public class UnpatchableTest {
                 System.out.println(String.format("unpatchableMethod(%d) end", i));
             }
 
-            @Instrument(@RestorePoint(value = "unpatchableMethod2", patchable = false))
+            @Async(@Await(value = "unpatchableMethod2", patchable = false))
             public void patchableMethod(int i) {
                 System.out.println("patchableMethod(" + i + ")");
                 unpatchableMethod2(5, "string");
@@ -48,7 +48,7 @@ public class UnpatchableTest {
                 System.out.println(String.format("unpatchableMethod2(%d, %s) end", a, b));
             }
 
-            @Instrument(@RestorePoint("yield"))
+            @Async(@Await("yield"))
             public void patchableMethod2(int a, String b) {
                 System.out.println(String.format("patchableMethod(%d, %s): before yield", a, b));
                 Coro.get().yield();

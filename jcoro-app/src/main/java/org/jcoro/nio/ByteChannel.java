@@ -1,8 +1,8 @@
 package org.jcoro.nio;
 
+import org.jcoro.Await;
 import org.jcoro.Coro;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
+import org.jcoro.Async;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousByteChannel;
@@ -12,7 +12,7 @@ import java.nio.channels.CompletionHandler;
  * @author elwood
  */
 public class ByteChannel {
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static Integer read(AsynchronousByteChannel channel, ByteBuffer dst) {
         final Coro coro = Coro.get();
         final Integer[] res = new Integer[1];
@@ -34,7 +34,7 @@ public class ByteChannel {
         return res[0];
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static Integer write(AsynchronousByteChannel channel, ByteBuffer src) {
         final Coro coro = Coro.get();
         final Integer[] res = new Integer[1];

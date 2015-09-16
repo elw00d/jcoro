@@ -1,9 +1,9 @@
 package org.jcoro.tests;
 
+import org.jcoro.Async;
+import org.jcoro.Await;
 import org.jcoro.Coro;
 import org.jcoro.ICoroRunnable;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
 import org.junit.Test;
 
 /**
@@ -20,7 +20,7 @@ public class TryFinallyTest {
     public void test() {
         final Coro coro = Coro.initSuspended(new ICoroRunnable() {
             @Override
-            @Instrument(@RestorePoint("yield"))
+            @Async(@Await("yield"))
             public void run() {
                 try {
                     System.out.println("Before yield");
@@ -40,7 +40,7 @@ public class TryFinallyTest {
     public void test2() {
         final Coro coro = Coro.initSuspended(new ICoroRunnable() {
             @Override
-            @Instrument(@RestorePoint("yield"))
+            @Async(@Await("yield"))
             public void run() {
                 try {
                     try {

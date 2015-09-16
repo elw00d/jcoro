@@ -1,9 +1,9 @@
 package org.jcoro.tests.simpletest2;
 
+import org.jcoro.Async;
 import org.jcoro.Coro;
 import org.jcoro.ICoroRunnable;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
+import org.jcoro.Await;
 
 /**
  * @author elwood
@@ -12,7 +12,7 @@ public class TestCoro {
     public static void main(String[] args) {
         Coro coro = Coro.initSuspended(new ICoroRunnable() {
             @Override
-            @Instrument({@RestorePoint(value = "foo")})
+            @Async({@Await(value = "foo")})
             public void run() {
                 int i = 5;
                 double f = 10;
@@ -23,7 +23,7 @@ public class TestCoro {
                 System.out.println("coro: func end, i: " + i + ", str: " + argStr);
             }
 
-            @Instrument(@RestorePoint("yield"))
+            @Async(@Await("yield"))
             private String foo(int x, double y, String m) {
                 assert x == 5;
                 assert y == 10;

@@ -5,6 +5,7 @@ import java.util.Stack;
 /**
  * @author elwood
  */
+@SuppressWarnings("unused")
 public class Coro implements AutoCloseable {
     private static ThreadLocal<Stack<Coro>> activeCoroStack = new ThreadLocal<>();
 

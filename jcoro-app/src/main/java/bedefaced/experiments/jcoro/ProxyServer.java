@@ -8,10 +8,10 @@ import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.nio.channels.AsynchronousSocketChannel;
 
+import org.jcoro.Async;
+import org.jcoro.Await;
 import org.jcoro.Coro;
 import org.jcoro.ICoroRunnable;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
 import org.jcoro.nio.ServerSocketChannel;
 import org.jcoro.nio.SocketChannel;
 
@@ -60,7 +60,7 @@ public class ProxyServer implements Runnable {
 
         Coro acceptClientCoro = Coro.initSuspended(new ICoroRunnable() {
             @Override
-            @Instrument({@RestorePoint("accept"), @RestorePoint("connect")})
+            @Async({@Await("accept"), @Await("connect")})
             public void run() {
                 while (true) {
                     AsynchronousSocketChannel client = ServerSocketChannel
@@ -82,7 +82,7 @@ public class ProxyServer implements Runnable {
                             .initSuspended(new ICoroRunnable() {
 
                                 @Override
-                                @Instrument({@RestorePoint("read"), @RestorePoint("write")})
+                                @Async({@Await("read"), @Await("write")})
                                 public void run() {
                                     while (true) {
                                         SocketChannel.read(client,
@@ -99,7 +99,7 @@ public class ProxyServer implements Runnable {
                             .initSuspended(new ICoroRunnable() {
 
                                 @Override
-                                @Instrument({@RestorePoint("read"), @RestorePoint("write")})
+                                @Async({@Await("read"), @Await("write")})
                                 public void run() {
                                     while (true) {
                                         SocketChannel.read(finalRemote,

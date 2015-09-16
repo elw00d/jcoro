@@ -1,8 +1,8 @@
 package org.jcoro.nio;
 
+import org.jcoro.Await;
 import org.jcoro.Coro;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
+import org.jcoro.Async;
 
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.nio.channels.AsynchronousSocketChannel;
@@ -12,7 +12,7 @@ import java.nio.channels.CompletionHandler;
  * @author bedefaced
  */
 public class ServerSocketChannel {
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static AsynchronousSocketChannel accept(AsynchronousServerSocketChannel channel) {
         Coro coro = Coro.get();
         final AsynchronousSocketChannel[] res = new AsynchronousSocketChannel[1];

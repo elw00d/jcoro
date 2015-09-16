@@ -1,10 +1,10 @@
 package org.jcoro.tests;
 
 import junit.framework.Assert;
+import org.jcoro.Async;
+import org.jcoro.Await;
 import org.jcoro.Coro;
 import org.jcoro.ICoroRunnable;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
 import org.junit.Test;
 
 /**
@@ -28,13 +28,13 @@ public class InnerCoroTest {
         state[0] = 0;
         Coro outerCoro = Coro.initSuspended(new ICoroRunnable() {
             @Override
-            @Instrument(@RestorePoint("yield"))
+            @Async(@Await("yield"))
             public void run() {
                 Coro _outerCoro = Coro.get();
 
                 Coro innerCoro = Coro.initSuspended(new ICoroRunnable() {
                     @Override
-                    @Instrument(@RestorePoint("yield"))
+                    @Async(@Await("yield"))
                     public void run() {
                         assertStepIs(2, state);
                         Coro _innerCoro = Coro.get();

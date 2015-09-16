@@ -1,8 +1,8 @@
 package org.jcoro.nio;
 
+import org.jcoro.Async;
+import org.jcoro.Await;
 import org.jcoro.Coro;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
 
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
  * @author bedefaced
  */
 public class SocketChannel {
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static void connect(AsynchronousSocketChannel channel, SocketAddress remote) {
         Coro coro = Coro.get();
         final Throwable[] exc = new Throwable[1];
@@ -33,7 +33,7 @@ public class SocketChannel {
         if (exc[0] != null) throw new RuntimeException(exc[0]);
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static Integer read(AsynchronousSocketChannel channel, ByteBuffer buffer) {
         Coro coro = Coro.get();
         final Integer[] res = new Integer[1];
@@ -55,7 +55,7 @@ public class SocketChannel {
         return res[0];
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static Integer read(AsynchronousSocketChannel channel, ByteBuffer buffer, long timeout, TimeUnit unit) {
         Coro coro = Coro.get();
         final Integer[] res = new Integer[1];
@@ -77,7 +77,7 @@ public class SocketChannel {
         return res[0];
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static Long read(AsynchronousSocketChannel channel, ByteBuffer[] dsts, int offset,
                             int length, long timeout, TimeUnit unit) {
         Coro coro = Coro.get();
@@ -100,7 +100,7 @@ public class SocketChannel {
         return res[0];
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static Integer write(AsynchronousSocketChannel channel, ByteBuffer buffer) {
         Coro coro = Coro.get();
         final Integer[] res = new Integer[1];
@@ -122,7 +122,7 @@ public class SocketChannel {
         return res[0];
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static Integer write(AsynchronousSocketChannel channel, ByteBuffer buffer, long timeout, TimeUnit unit) {
         Coro coro = Coro.get();
         final Integer[] res = new Integer[1];
@@ -144,7 +144,7 @@ public class SocketChannel {
         return res[0];
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static Long write(AsynchronousSocketChannel channel, ByteBuffer[] dsts, int offset,
                             int length, long timeout, TimeUnit unit) {
         Coro coro = Coro.get();

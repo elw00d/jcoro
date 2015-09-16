@@ -1,8 +1,8 @@
 package org.jcoro.nio;
 
+import org.jcoro.Async;
+import org.jcoro.Await;
 import org.jcoro.Coro;
-import org.jcoro.Instrument;
-import org.jcoro.RestorePoint;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousFileChannel;
@@ -13,7 +13,7 @@ import java.nio.channels.FileLock;
  * @author elwood
  */
 public class FileChannel {
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static FileLock lock(AsynchronousFileChannel channel) {
         final Coro coro = Coro.get();
         final FileLock[] res = new FileLock[1];
@@ -35,7 +35,7 @@ public class FileChannel {
         return res[0];
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static FileLock lock(AsynchronousFileChannel channel,
                                 long position,
                                 long size,
@@ -60,7 +60,7 @@ public class FileChannel {
         return res[0];
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static Integer read(AsynchronousFileChannel channel,
                                ByteBuffer dst,
                                long position) {
@@ -84,7 +84,7 @@ public class FileChannel {
         return res[0];
     }
 
-    @Instrument(@RestorePoint("yield"))
+    @Async(@Await("yield"))
     public static Integer write(AsynchronousFileChannel channel,
                                 ByteBuffer src,
                                 long position) {

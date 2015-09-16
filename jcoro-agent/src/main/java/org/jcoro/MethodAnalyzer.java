@@ -17,7 +17,7 @@ import static java.util.stream.Collectors.toList;
  * Получает для переданного метода количество точек восстановления и два параллельных массива:
  * массив состояний фрейма и массив инструкций (каждой инструкции соответствует состояние фрейма).
  *
- * Собранные данные записываются в мапы только в случае, если метод помечен аннотацией @Instrument.
+ * Собранные данные записываются в мапы только в случае, если метод помечен аннотацией @Async.
  *
  * @author elwood
  */
@@ -29,7 +29,7 @@ public class MethodAnalyzer extends MethodVisitor {
 
     private final byte[] classFile;
 
-    private List<RestorePoint> declaredRestorePoints;
+    private List<Await> declaredRestorePoints;
 
     // "out parameters"
     private final Map<MethodId, MethodAnalyzeResult> resultMap;
@@ -56,7 +56,7 @@ public class MethodAnalyzer extends MethodVisitor {
 
     @Override
     public AnnotationVisitor visitAnnotation(String desc, boolean visible) {
-        if ("Lorg/jcoro/Instrument;".equals(desc)) {
+        if ("Lorg/jcoro/Async;".equals(desc)) {
             return new AnnotationNode(Opcodes.ASM5, desc) {
                 @Override
                 public void visitEnd() {
@@ -82,14 +82,14 @@ public class MethodAnalyzer extends MethodVisitor {
                                     break;
                                 }
                                 default:{
-                                    throw new UnsupportedOperationException("Unknown @RestorePoint property: " + name);
+                                    throw new UnsupportedOperationException("Unknown @Await property: " + name);
                                 }
                             }
                         }
                         final String _value = value;
                         final String _desc = desc;
                         final boolean _patchable = patchable;
-                        return new RestorePoint() {
+                        return new Await() {
                             @Override
                             public String value() {
                                 return _value;
@@ -107,7 +107,7 @@ public class MethodAnalyzer extends MethodVisitor {
 
                             @Override
                             public Class<? extends Annotation> annotationType() {
-                                return RestorePoint.class;
+                                return Await.class;
                             }
                         };
                     }).collect(toList());
@@ -124,7 +124,7 @@ public class MethodAnalyzer extends MethodVisitor {
         return super.visitTypeAnnotation(typeRef, typePath, desc, visible);
     }
 
-    private Optional<RestorePoint> findInRestorePoints(MethodId callingMethodId) {
+    private Optional<Await> findInRestorePoints(MethodId callingMethodId) {
         if (declaredRestorePoints == null) return Optional.empty();
 
         return declaredRestorePoints.stream().filter(restorePoint -> {
@@ -139,7 +139,7 @@ public class MethodAnalyzer extends MethodVisitor {
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
         MethodId callingMethodId = new MethodId(owner, name, desc);
-        final Optional<RestorePoint> restorePointOptional = findInRestorePoints(callingMethodId);
+        final Optional<Await> restorePointOptional = findInRestorePoints(callingMethodId);
         if (restorePointOptional.isPresent()) {
             if (null == restorePoints) restorePoints = new HashSet<>();
             restorePoints.add(callingMethodId);
@@ -184,7 +184,7 @@ public class MethodAnalyzer extends MethodVisitor {
     @Override
     public void visitEnd() {
         // Нужно ли записывать собранные данные в выходные мапы
-        // Если на методе нет аннотации @Instrument - то не пишем
+        // Если на методе нет аннотации @Async - то не пишем
         // В противном случае пишем, даже если точек восстановления не найдено
         if (declaredRestorePoints == null) {
             super.visitEnd();
