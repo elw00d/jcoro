@@ -150,7 +150,6 @@ public class MethodAdapter extends MethodVisitor {
         // if (Coro.get() == null) goto noActiveCoroLabel;
         mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "getSafe", "()Lorg/jcoro/Coro;", false);
         Label noActiveCoroLabel = new Label();
-        //mv.visitFrame(Opcodes.F_SAME1, 0, null, 1, new Object[] {"Lorg/jcoro/Coro;"});
         mv.visitJumpInsn(Opcodes.IFNULL, noActiveCoroLabel);
 
         // popState()
@@ -160,7 +159,7 @@ public class MethodAdapter extends MethodVisitor {
         mv.visitJumpInsn(Opcodes.IFNULL, noActiveStateLabel);
 
         // Now, when state != null, we have to pop extra ref (saved "this") if current method is not static
-        // and if this method has been called from unpatchable code
+        // and if this method has been called from unpatchable context
         if (!isStatic) {
             mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "isUnpatchableCall", "()Z", false);
             Label noUnpatchableFlag = new Label();
@@ -181,7 +180,7 @@ public class MethodAdapter extends MethodVisitor {
         restoreLabels = new Label[nRestorePoints];
         for (int i = 0; i < nRestorePoints; i++) restoreLabels[i] = new Label();
         if (nRestorePoints == 1) {
-            // Если state != null и оно может быть только одно, то сразу прыгаем на метку
+            // If state != null and there is only one restore point in this method, jump to label directly
             mv.visitInsn(Opcodes.POP);
             mv.visitJumpInsn(Opcodes.GOTO, restoreLabels[0]);
         } else {
@@ -193,7 +192,7 @@ public class MethodAdapter extends MethodVisitor {
         // noActiveStateLabel:
         mv.visitLabel(noActiveStateLabel);
         putFrame(currentFrame(), "Ljava/lang/Integer;");
-        mv.visitInsn(Opcodes.POP);
+        mv.visitInsn(Opcodes.POP); // Remove extra (duplicated) `state`
 
         // noActiveCoroLabel:
         mv.visitLabel(noActiveCoroLabel);
@@ -589,7 +588,7 @@ public class MethodAdapter extends MethodVisitor {
 
             restoreLocals();
 
-            // Восстанавливаем дно стека
+            // Восстанавливаем дно стека (стек операндов, за исключением аргументов подготавливаемого вызова)
             restoreStackBottom(callingMethodType, callingMethodIsStatic);
 
             // Восстанавливаем instance для вызова, если метод - экземплярный

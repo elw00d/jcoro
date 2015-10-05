@@ -13,11 +13,26 @@ import java.lang.annotation.Target;
 @Target({ElementType.METHOD, ElementType.TYPE_USE})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Await {
+    /**
+     * Name of method.
+     */
     String value() default "";
 
-    // Not required
+    /**
+     * Signature of method. May be needed to resolve ambiguities.
+     * Not required.
+     */
     String desc() default "";
 
-    // Not required
+    /**
+     * Full class name of method owner. May be needed to resolve ambiguities.
+     * Not required.
+     */
+    String owner() default "";
+
+    /**
+     * If method cannot be instrumented, this attribute should be set to `false`.
+     * Not required, default value is `true`.
+     */
     boolean patchable() default true;
 }

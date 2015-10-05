@@ -64,6 +64,7 @@ public class MethodAnalyzer extends MethodVisitor {
                         String value = "";
                         String desc = "";
                         boolean patchable = true;
+                        String owner = "";
                         for (int i = 0; i < annotationNode.values.size(); i+= 2) {
                             final String name = (String) annotationNode.values.get(i);
                             switch (name) {
@@ -73,6 +74,10 @@ public class MethodAnalyzer extends MethodVisitor {
                                 }
                                 case "desc": {
                                     desc = (String) annotationNode.values.get(i + 1);
+                                    break;
+                                }
+                                case "owner": {
+                                    owner = (String) annotationNode.values.get(i + 1);
                                     break;
                                 }
                                 case "patchable": {
@@ -86,6 +91,7 @@ public class MethodAnalyzer extends MethodVisitor {
                         }
                         final String _value = value;
                         final String _desc = desc;
+                        final String _owner = owner;
                         final boolean _patchable = patchable;
                         return new Await() {
                             @Override
@@ -96,6 +102,11 @@ public class MethodAnalyzer extends MethodVisitor {
                             @Override
                             public String desc() {
                                 return _desc;
+                            }
+
+                            @Override
+                            public String owner() {
+                                return _owner;
                             }
 
                             @Override
@@ -126,7 +137,8 @@ public class MethodAnalyzer extends MethodVisitor {
         if (declaredRestorePoints == null) return Optional.empty();
 
         return declaredRestorePoints.stream().filter(restorePoint -> {
-            boolean ownerEquals = true; // todo : позволять уточнять имя класса/интерфейса
+            boolean ownerEquals = restorePoint.owner().equals("")
+                    || restorePoint.owner().equals(callingMethodId.className);
             boolean nameEquals = restorePoint.value().equals(callingMethodId.methodName);
             boolean descEquals = "".equals(restorePoint.desc())
                     || restorePoint.desc().equals(callingMethodId.signature);
