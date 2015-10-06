@@ -1,48 +1,24 @@
 package org.jcoro;
 
+import org.jcoro.nio.SocketChannel;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.nio.channels.AsynchronousSocketChannel;
-import java.nio.channels.CompletionHandler;
 import java.nio.charset.Charset;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.jcoro.nio.ServerSocketChannel.accept;
+import static org.jcoro.nio.SocketChannel.read;
+import static org.jcoro.nio.SocketChannel.write;
 
 /**
  * @author elwood
  */
 public class SyncaServer {
-    static AtomicInteger openChannels = new AtomicInteger();
-
-    @Async({@Await("yield")})
-    public static AsynchronousSocketChannel accept(AsynchronousServerSocketChannel listener) {
-        Coro coro = Coro.get();
-        final AsynchronousSocketChannel[] res = new AsynchronousSocketChannel[1];
-        final Throwable[] exc = new Throwable[1];
-        coro.yield(() -> {
-            listener.accept(null, new CompletionHandler<AsynchronousSocketChannel, Void>() {
-                @Override
-                public void completed(AsynchronousSocketChannel result, Void attachment) {
-                    res[0] = result;
-                    coro.resume();
-                }
-
-                @Override
-                public void failed(Throwable e, Void attachment) {
-                    exc[0] = e;
-                    coro.resume();
-                }
-            });
-        });
-        if (exc[0] != null)
-            throw new RuntimeException(exc[0]);
-        return res[0];
-    }
-
     public static void main(String[] args) throws IOException, InterruptedException {
         Coro coro = Coro.initSuspended(new ICoroRunnable() {
             @Override
@@ -52,7 +28,7 @@ public class SyncaServer {
                     ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
                     final AsynchronousServerSocketChannel listener =
-                            AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(5000));
+                            AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(8080));
 
                     while (true) {
                         AsynchronousSocketChannel channel = accept(listener);
@@ -88,75 +64,21 @@ public class SyncaServer {
         Thread.sleep(60000);
     }
 
-    @Async(@Await("yield"))
-    public static Integer read(AsynchronousSocketChannel channel,
-                               ByteBuffer buffer) {
-        Coro coro = Coro.get();
-        final Integer[] res = new Integer[1];
-        final Throwable[] exc = new Throwable[1];
-        coro.setDeferFunc(() -> {
-            channel.read(buffer, 5, TimeUnit.SECONDS, null, new CompletionHandler<Integer, Void>() {
-                @Override
-                public void completed(Integer result, Void attachment) {
-                    res[0] = result;
-                    coro.resume();
-                }
-
-                @Override
-                public void failed(Throwable e, Void attachment) {
-                    exc[0] = e;
-                    coro.resume();
-                }
-            });
-        });
-        coro.yield();
-        if (exc[0] != null) throw new RuntimeException(exc[0]);
-        return res[0];
-    }
-
-    @Async(@Await("yield"))
-    private static Integer write(AsynchronousSocketChannel channel,
-                                 ByteBuffer buffer) {
-        Coro coro = Coro.get();
-        final Integer[] res = new Integer[1];
-        final Throwable[] exc = new Throwable[1];
-        coro.setDeferFunc(() -> {
-            channel.write(buffer, 5, TimeUnit.SECONDS, null, new CompletionHandler<Integer, Void>() {
-                @Override
-                public void completed(Integer result, Void attachment) {
-                    res[0] = result;
-                    coro.resume();
-                }
-
-                @Override
-                public void failed(Throwable e, Void attachment) {
-                    exc[0] = e;
-                    coro.resume();
-                }
-            });
-        });
-        coro.yield();
-        if (exc[0] != null) throw new RuntimeException(exc[0]);
-        return res[0];
-    }
-
-    static ByteBuffer outBuffer = ByteBuffer.wrap("200 OK".getBytes(Charset.forName("utf-8")));
-
     @Async({@Await("read"), @Await("write")})
     public static void handle(AsynchronousSocketChannel channel) {
-//        System.out.println("Starting handling " + channel);
         ByteBuffer buffer = ByteBuffer.allocate(10 * 1024);
 
-        Integer read = read(channel, buffer);
-//        System.out.println(String.format("Readed %d bytes", read));
+        read(channel, buffer);
+        ByteBuffer outBuffer = ByteBuffer.wrap(("HTTP/1.1 200 OK\n" +
+                "Server: jcoro SyncaServer\n" +
+                "Content-Language: ru\n" +
+                "Content-Type: text/html; charset=utf-8\n" +
+                "Content-Length: 0\n" +
+                "Connection: close").getBytes(Charset.forName("utf-8")));
         write(channel, outBuffer);
-//        System.out.println("Written to " + channel);
 
         try {
-//            System.out.println("Closing " + channel);
             channel.close();
-            int nOpen = openChannels.decrementAndGet();
-//            System.out.println("Open channels: " + nOpen);
         } catch (IOException e) {
             e.printStackTrace();
         }
