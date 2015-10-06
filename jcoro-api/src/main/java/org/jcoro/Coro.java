@@ -11,6 +11,8 @@ public class Coro implements AutoCloseable {
 
     private final ICoroRunnable runnable;
 
+    private volatile Object memoryBarrier;
+
     private Coro(ICoroRunnable runnable) {
         this.runnable = runnable;
     }
@@ -117,6 +119,10 @@ public class Coro implements AutoCloseable {
     }
 
     public void resume() {
+        // If another thread will call resume() after yielding, it will read from volatile field,
+        // and will see all changes made in memory before writing to field
+        Object notUsed = this.memoryBarrier;
+
         pushCoro(this);
         try {
             // Call coro func
@@ -132,7 +138,13 @@ public class Coro implements AutoCloseable {
             }
             activeCoroStack.get().pop();
         }
+
+        // Write to volatile field to set the memory barrier
+        this.memoryBarrier = null;
+
         // Call defer func
+        // Note that there are no guarantees that all changes in memory made by deferFunc will be seen by another
+        // thread after resuming. If you need this, you should care about this explicitly.
         if (deferFunc != null) {
             // Обнуляем deferFunc перед вызовом, т.к. внутри deferFunc может быть любой код,
             // в том числе и приводящий к рекурсивному вызову resume() - например если
