@@ -10,7 +10,7 @@ gradlew :jcoro-app:build --rerun-tasks
 Build and run SyncaServer:
 
 ```bash
-gradlew :jcoro-app:build --rerun-tasks
+gradlew :jcoro-app:build
 java -cp jcoro-api/build/libs/jcoro-api-1.0.jar:jcoro-app/build/classes/instrumented org.jcoro.SyncaServer
 ```
 
