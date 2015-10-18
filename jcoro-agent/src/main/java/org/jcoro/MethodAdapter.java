@@ -630,6 +630,10 @@ public class MethodAdapter extends MethodVisitor {
                 assert nextFrame().getLocals() >= 1; // At least one local ("this") should be present
                 mv.visitVarInsn(Opcodes.ALOAD, 0);
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
+            } else if (analyzeResult.isRootLambda()) {
+                // Put extra NULL object to keep stack balanced when resuming
+                mv.visitInsn(Opcodes.ACONST_NULL);
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
             }
 
             // Save the state
@@ -1035,6 +1039,10 @@ public class MethodAdapter extends MethodVisitor {
             if (!isStatic) {
                 assert nextFrame().getLocals() >= 1; // At least one local ("this") should be present
                 mv.visitVarInsn(Opcodes.ALOAD, 0);
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
+            } else if (analyzeResult.isRootLambda()) {
+                // Put extra NULL object to keep stack balanced when resuming
+                mv.visitInsn(Opcodes.ACONST_NULL);
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
             }
 

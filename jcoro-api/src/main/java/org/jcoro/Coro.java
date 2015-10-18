@@ -128,7 +128,9 @@ public class Coro implements AutoCloseable {
             // Call coro func
             if (suspendedAfterYield) {
                 Object rootInstance = popRef();
-                if (rootInstance != runnable) throw new AssertionError("This shouldn't happen");
+                if (rootInstance != runnable
+                        && rootInstance != null) // rootInstance is null when using lambdas (which are static methods actually)
+                    throw new AssertionError("This shouldn't happen");
             }
             runnable.run();
         } finally {

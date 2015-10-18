@@ -127,6 +127,13 @@ public class Program {
         className = null;
         wasModified = false;
 
+        // В первую очередь пройдёмся по всем методам и поищем лямбды, помеченные @Async-аннотациями
+        // Их нужно найти в первую очередь, чтобы потом использовать выпарсенные type-аннотации так, как будто
+        // бы они были навешаны прямо на метод
+        Map<MethodId, AsyncLambdaInfo> asyncLambdas = new HashMap<>();
+        ClassReader lambdasSearchReader = new ClassReader(bytes);
+        lambdasSearchReader.accept(new LambdasSearchVisitor(asyncLambdas), 0);
+
         Map<MethodId, MethodAnalyzeResult> analyzeResults = new HashMap<>();
 
         // Сначала посчитаем для каждого метода кол-во точек восстановления внутри него
@@ -143,7 +150,8 @@ public class Program {
             @Override
             public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
                 return new MethodAnalyzer(Opcodes.ASM5, access, className, name, desc,
-                        signature, exceptions, analyzeResults, classLoader);
+                        signature, exceptions, analyzeResults, classLoader,
+                        asyncLambdas.get(new MethodId(className, name, desc)));
             }
         }, 0);
 

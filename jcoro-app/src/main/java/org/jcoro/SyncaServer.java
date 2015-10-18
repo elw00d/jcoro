@@ -1,7 +1,5 @@
 package org.jcoro;
 
-import org.jcoro.nio.SocketChannel;
-
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;

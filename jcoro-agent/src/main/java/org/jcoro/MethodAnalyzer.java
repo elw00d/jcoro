@@ -29,6 +29,7 @@ public class MethodAnalyzer extends MethodVisitor {
     private final ClassLoader classLoader;
 
     private List<Await> declaredRestorePoints;
+    private boolean rootLambda;
 
     // "out parameters"
     private final Map<MethodId, MethodAnalyzeResult> resultMap;
@@ -40,7 +41,8 @@ public class MethodAnalyzer extends MethodVisitor {
     public MethodAnalyzer(int api, int access, String owner, String name, String desc, String signature,
                           String[] exceptions,
                           Map<MethodId, MethodAnalyzeResult> resultMap,
-                          ClassLoader classLoader) {
+                          ClassLoader classLoader,
+                          AsyncLambdaInfo asyncLambdaInfo) { // This parameter is passed when method is lambda
         super(api, new MethodNode(Opcodes.ASM5, access, name, desc, signature, exceptions));
         //
         this.mn = (MethodNode) super.mv;
@@ -50,6 +52,15 @@ public class MethodAnalyzer extends MethodVisitor {
         this.methodId = new MethodId(owner, name, desc);
         // output
         this.resultMap = resultMap;
+
+        if (asyncLambdaInfo != null) {
+            this.declaredRestorePoints = asyncLambdaInfo.getDeclaredRestorePoints();
+
+            // If lambda is ICoroRunnable, we consider it as Root Lambda (lambda, which will be called first)
+            // If you want to use some ICoroRunnable lambda in non-root context, you can inherit interface
+            // (INonRootCoroRunnable extends ICoroRunnable) and use it instead of ICoroRunnable.
+            this.rootLambda = asyncLambdaInfo.getDesc().endsWith(")Lorg/jcoro/ICoroRunnable;");
+        }
     }
 
     @Override
@@ -265,7 +276,7 @@ public class MethodAnalyzer extends MethodVisitor {
         }
         //
         resultMap.put(methodId, new MethodAnalyzeResult(
-                restorePointCalls, restorePoints, unpatchableRestorePoints, frames, insns)
+                restorePointCalls, restorePoints, unpatchableRestorePoints, frames, insns, rootLambda)
         );
         //
         super.visitEnd();
