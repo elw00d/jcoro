@@ -45,7 +45,7 @@ public class MethodAdapter extends MethodVisitor {
         Label handler;
         String type;
 
-        public TryCatchBlock(Label start, Label end, Label handler, String type) {
+        TryCatchBlock(Label start, Label end, Label handler, String type) {
             this.start = start;
             this.end = end;
             this.handler = handler;
@@ -531,6 +531,18 @@ public class MethodAdapter extends MethodVisitor {
         }
     }
 
+    private void saveThis() {
+        if (!isStatic) {
+            assert nextFrame().getLocals() >= 1; // At least one local ("this") should be present
+            mv.visitVarInsn(Opcodes.ALOAD, 0);
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
+        } else if (analyzeResult.isRootLambda()) {
+            // Put extra NULL object to keep stack balanced when resuming
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
+        }
+    }
+
     private void returnDefault() {
         visitLdcDefaultValueForType(returnType); // Push default value for return type
         //
@@ -596,8 +608,8 @@ public class MethodAdapter extends MethodVisitor {
 
             // Передаём дефолтные значения для аргументов вызова
             final Type[] argumentTypes = callingMethodType.getArgumentTypes();
-            for (int i = 0; i < argumentTypes.length; i++) {
-                visitLdcDefaultValueForType(argumentTypes[i]);
+            for (Type argumentType : argumentTypes) {
+                visitLdcDefaultValueForType(argumentType);
             }
         }
 
@@ -626,15 +638,7 @@ public class MethodAdapter extends MethodVisitor {
             saveLocals();
 
             // Finally, save "this" if method is instance method
-            if (!isStatic) {
-                assert nextFrame().getLocals() >= 1; // At least one local ("this") should be present
-                mv.visitVarInsn(Opcodes.ALOAD, 0);
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
-            } else if (analyzeResult.isRootLambda()) {
-                // Put extra NULL object to keep stack balanced when resuming
-                mv.visitInsn(Opcodes.ACONST_NULL);
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
-            }
+            saveThis();
 
             // Save the state
             mv.visitLdcInsn(restorePointsProcessed);
@@ -657,8 +661,7 @@ public class MethodAdapter extends MethodVisitor {
      */
     private void restoreArgs(Type callingMethodType) {
         final Type[] argumentTypes = callingMethodType.getArgumentTypes();
-        for (int i = 0; i < argumentTypes.length; i++) {
-            Type argumentType = argumentTypes[i];
+        for (Type argumentType : argumentTypes) {
             final int sort = argumentType.getSort();
             switch (sort) {
                 case Type.VOID:
@@ -705,50 +708,13 @@ public class MethodAdapter extends MethodVisitor {
      */
     private int[] calculateUnpatchableOffsets(Type[] argumentTypes, boolean callingMethodIsStatic) {
         int[] offsets = new int[argumentTypes.length + (callingMethodIsStatic ? 0 : 1)];
-        int refsStackDepth = 0;
-        int intsStackDepth = 0;
-        int longsStackDepth = 0;
-        int floatsStackDepth = 0;
-        int doublesStackDepth = 0;
+        StackDepthInfo stackDepth = calculateStackDepth(argumentTypes, callingMethodIsStatic);
 
-        for (int i = 0; i < argumentTypes.length; i++) {
-            Type argumentType = argumentTypes[i];
-            final int sort = argumentType.getSort();
-            switch (sort) {
-                case Type.VOID:
-                case Type.OBJECT:
-                case Type.ARRAY:
-                    refsStackDepth++;
-                    break;
-                case Type.INT:
-                case Type.SHORT:
-                case Type.BYTE:
-                case Type.BOOLEAN:
-                case Type.CHAR:
-                    intsStackDepth++;
-                    break;
-                case Type.LONG:
-                    longsStackDepth++;
-                    break;
-                case Type.FLOAT:
-                    floatsStackDepth++;
-                    break;
-                case Type.DOUBLE:
-                    doublesStackDepth++;
-                    break;
-                default:
-                    throw new AssertionError("This shouldn't happen");
-            }
-        }
-        if (!callingMethodIsStatic) {
-            refsStackDepth++;
-        }
-
-        int _refsStackDepth = refsStackDepth;
-        int _intsStackDepth = intsStackDepth;
-        int _longsStackDepth = longsStackDepth;
-        int _floatsStackDepth = floatsStackDepth;
-        int _doublesStackDepth = doublesStackDepth;
+        int _refsStackDepth = stackDepth.refsStackDepth;
+        int _intsStackDepth = stackDepth.intsStackDepth;
+        int _longsStackDepth = stackDepth.longsStackDepth;
+        int _floatsStackDepth = stackDepth.floatsStackDepth;
+        int _doublesStackDepth = stackDepth.doublesStackDepth;
 
         for (int i = argumentTypes.length - 1; i >= 0; i--) {
             Type argumentType = argumentTypes[i];
@@ -785,7 +751,7 @@ public class MethodAdapter extends MethodVisitor {
     /**
      * Saves the args in Coro's main storage, by copying them from unpatchable storage.
      */
-    public void saveArgs(Type[] argumentTypes, int[] offsets, boolean callingMethodIsStatic) {
+    private void saveArgs(Type[] argumentTypes, int[] offsets, boolean callingMethodIsStatic) {
         // Перекладываем аргументы из unpatchable storage в обычный storage
         for (int i = 0; i < argumentTypes.length; i++) {
             Type argumentType = argumentTypes[i];
@@ -832,59 +798,68 @@ public class MethodAdapter extends MethodVisitor {
         }
     }
 
-    /**
-     * Removes all items saved to unpatchables storage before method call.
-     */
-    public void cleanUnpatchablesFrame(Type[] argumentTypes, boolean callingMethodIsStatic) {
-        int refsStackDepth = 0;
-        int intsStackDepth = 0;
-        int longsStackDepth = 0;
-        int floatsStackDepth = 0;
-        int doublesStackDepth = 0;
+    private static class StackDepthInfo {
+        int refsStackDepth;
+        int intsStackDepth;
+        int longsStackDepth;
+        int floatsStackDepth;
+        int doublesStackDepth;
+    }
 
-        for (int i = 0; i < argumentTypes.length; i++) {
-            Type argumentType = argumentTypes[i];
+    private static StackDepthInfo calculateStackDepth(Type[] argumentTypes, boolean callingMethodIsStatic) {
+        StackDepthInfo info = new StackDepthInfo();
+
+        for (Type argumentType : argumentTypes) {
             final int sort = argumentType.getSort();
             switch (sort) {
                 case Type.VOID:
                 case Type.OBJECT:
                 case Type.ARRAY:
-                    refsStackDepth++;
+                    info.refsStackDepth++;
                     break;
                 case Type.INT:
                 case Type.SHORT:
                 case Type.BYTE:
                 case Type.BOOLEAN:
                 case Type.CHAR:
-                    intsStackDepth++;
+                    info.intsStackDepth++;
                     break;
                 case Type.LONG:
-                    longsStackDepth++;
+                    info.longsStackDepth++;
                     break;
                 case Type.FLOAT:
-                    floatsStackDepth++;
+                    info.floatsStackDepth++;
                     break;
                 case Type.DOUBLE:
-                    doublesStackDepth++;
+                    info.doublesStackDepth++;
                     break;
                 default:
                     throw new AssertionError("This shouldn't happen");
             }
         }
         if (!callingMethodIsStatic) {
-            refsStackDepth++;
+            info.refsStackDepth++;
         }
 
-        mv.visitLdcInsn(refsStackDepth);
-        mv.visitLdcInsn(intsStackDepth);
-        mv.visitLdcInsn(longsStackDepth);
-        mv.visitLdcInsn(floatsStackDepth);
-        mv.visitLdcInsn(doublesStackDepth);
+        return info;
+    }
+
+    /**
+     * Removes all items saved to unpatchables storage before method call.
+     */
+    private void cleanUnpatchablesFrame(Type[] argumentTypes, boolean callingMethodIsStatic) {
+        StackDepthInfo stackDepth = calculateStackDepth(argumentTypes, callingMethodIsStatic);
+
+        mv.visitLdcInsn(stackDepth.refsStackDepth);
+        mv.visitLdcInsn(stackDepth.intsStackDepth);
+        mv.visitLdcInsn(stackDepth.longsStackDepth);
+        mv.visitLdcInsn(stackDepth.floatsStackDepth);
+        mv.visitLdcInsn(stackDepth.doublesStackDepth);
         mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "cleanupUnpatchableFrame", "(IIIII)V", false);
     }
 
-    public void saveArgsInTempStorage(Type[] argumentTypes, boolean callingMethodIsStatic,
-                                      int[] offsets, String owner) {
+    private void saveArgsInTempStorage(Type[] argumentTypes, boolean callingMethodIsStatic,
+                                       int[] offsets, String owner) {
         // Save args and instance to temporary storage
         for (int i = argumentTypes.length - 1; i >= 0; i--) {
             Type argumentType = argumentTypes[i];
@@ -1036,15 +1011,7 @@ public class MethodAdapter extends MethodVisitor {
             saveLocals();
 
             // Save "this" if method is instance method
-            if (!isStatic) {
-                assert nextFrame().getLocals() >= 1; // At least one local ("this") should be present
-                mv.visitVarInsn(Opcodes.ALOAD, 0);
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
-            } else if (analyzeResult.isRootLambda()) {
-                // Put extra NULL object to keep stack balanced when resuming
-                mv.visitInsn(Opcodes.ACONST_NULL);
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jcoro/Coro", "pushRef", "(Ljava/lang/Object;)V", false);
-            }
+            saveThis();
 
             // Save the state
             mv.visitLdcInsn(restorePointsProcessed);
